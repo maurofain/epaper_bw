@@ -1,47 +1,46 @@
-# ESP32-S3 + ePaper 2.13" 3 colori (bianco/nero/rosso) con LVGL
+# ESP32-S2 + E-Paper 1.54" 200x200 con LVGL
 
-Progetto base PlatformIO per:
-- ESP32-S3-WROOM
-- Display ePaper 2.13" tri-color
-- LVGL
-- Contasecondi dal boot
+Firmware per la scheda EpaperQr basata su ESP32-S2-MINI-2-N4 e display Waveshare 1.54" 200x200 (GDEY0154D67).
 
 ## Struttura
 
-- `platformio.ini`: configurazione build
+- `platformio.ini`: configurazione build per ESP32-S2 mini
 - `include/lv_conf.h`: configurazione LVGL
-- `src/main.cpp`: logica display + UI + contasecondi
-- `src/ui/fonts/user_font_70.h`: dichiarazione font personalizzato
+- `src/main.cpp`: logica display, parser seriale, gestione LED e scanner
+- `src/ui/fonts/user_fonts.h`: inclusione dei font GoogleSans disponibili
 
-## Font 70px personalizzato
+## Font utilizzati
 
-1. Copia il tuo font in formato `.c` in `src/ui/fonts/` (qui è `GoogleSans70.c`).
-2. Verifica che il simbolo esposto sia `GoogleSans70`.
-3. In `platformio.ini`, imposta:
+I font disponibili in `src/ui/fonts/` sono:
+- `GoogleSans140.c` (numerico)
+- `GoogleSans100.c` (numerico)
+- `GoogleSans60.c` (numerico)
+- `GoogleSans50.c`
+- `GoogleSans35.c`
+- `GoogleSans20.c`
+- `GoogleSans15.c`
+- `GoogleSans10.c`
 
-```ini
-build_flags =
-  -DLV_CONF_INCLUDE_SIMPLE
-  -DUSE_USER_FONT_70=1
-```
+Le dimensioni 140, 100 e 60 sono destinate all'uso numerico.
 
-Se `USE_USER_FONT_70=0`, usa il fallback `lv_font_montserrat_48`.
+## Pin e display
 
-## Pin e modello pannello
-
-Nel file `src/main.cpp`:
-- aggiorna i pin SPI e segnali del display (`PIN_EPD_*`, `PIN_SPI_*`)
-- se il tuo pannello non è `GxEPD2_213_Z19c`, sostituisci il tipo corretto GxEPD2
+Nel file `src/main.cpp` sono configurati i pin per il nuovo hardware:
+- `PIN_EPD_*` e `PIN_SPI_*` per il display e-paper
+- `PIN_RX_ESP` / `PIN_TX_ESP` per la seriale verso MH1001
+- `PIN_SCANNER_RX` / `PIN_SCANNER_TX` per lo scanner
+- `PIN_QR_BCRES` / `PIN_QR_BCTRIG` per il controllo scanner
+- `PIN_RGB_LED` per i WS2812B
 
 ## Build / Upload
 
 ```bash
-pio run
-pio run -t upload
-pio device monitor
+pio run -e esp32s2_mini
+pio run -e esp32s2_mini -t upload
+pio device monitor -e esp32s2_mini
 ```
 
-## Note pratiche
+## Note
 
-- L'e-paper tri-color è lenta: un refresh al secondo è funzionale per test, ma non fluido.
-- Se vuoi, nel prossimo step possiamo ottimizzare il refresh (aree piccole / cadenza diversa).
+- Il parser seriale supporta i comandi 0x00, 0x01, 0x02 e la visualizzazione di stringhe.
+- Il progetto ora è focalizzato su ESP32-S2 e display 1.54".

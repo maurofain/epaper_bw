@@ -4,7 +4,7 @@ TL;DR: Convertire l'attuale demo ESP32-S3 + e-paper in un firmware per la nuova 
 
 **Steps**
 1. Aggiornare la configurazione di build e pin hardware.
-   - Modificare `platformio.ini` per usare il board ESP32-S3 corretto e definire i pin della nuova scheda.
+   - Modificare `platformio.ini` per usare il board ESP32-S2-MINI-2-N4 corretto e definire i pin della nuova scheda.
    - Verificare e cambiare il driver GxEPD2 da `GxEPD2_213_Z98c` a quello corretto per GDEY0154D67/1.54" 200x200.
    - Disabilitare LVGL se non necessario e usare il backend Adafruit GFX/GxEPD2 diretto.
 

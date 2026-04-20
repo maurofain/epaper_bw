@@ -2,7 +2,7 @@
 
 
 1. Dobbiamo convertire questo progetto pensato per una eps32s3 e un pannello epaper a 4 colori modificando le specifiche del pannello e del processore ed intgrando il nuovo hardware
-2. Impostare il processore a esp32s3
+2. Impostare il processore a ESP32-S2-MINI-2-N4
 3. il pannello epaper è il Waveshare 1.54 pollici E-Paper Raw Display Panel V2 200 x 200 , che utilizza un pannello goodDisplay GDEY0154D67. I driver sono in  https://github.com/ZinggJM/GxEPD2
 4. tabella Pin
 | Pin | GPIO | Descrizione | 
