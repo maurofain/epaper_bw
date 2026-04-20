@@ -1,10 +1,10 @@
 #include <Arduino.h>
 #include <SPI.h>
-#include <GxEPD2_3C.h>
+#include <GxEPD2_BW.h>
 #include <Adafruit_NeoPixel.h>
+#include "lv_conf.h"
 #include <lvgl.h>
 #include <vector>
-#include "ui/fonts/user_fonts.h"
 
 #ifndef DISPLAY_UPDATE_INTERVAL_SEC
 #define DISPLAY_UPDATE_INTERVAL_SEC 15
@@ -82,7 +82,7 @@ constexpr int8_t PIN_QR_BCRES_CFG = PIN_QR_BCRES;
 constexpr int8_t PIN_QR_BCTRIG_CFG = PIN_QR_BCTRIG;
 
 Adafruit_NeoPixel rgb_led(4, PIN_RGB_LED_CFG, NEO_GRB + NEO_KHZ800);
-GxEPD2_3C<GxEPD2_154_D67, GxEPD2_154_D67::HEIGHT> epd_display(GxEPD2_154_D67(PIN_EPD_CS_CFG, PIN_EPD_DC_CFG, PIN_EPD_RST_CFG, PIN_EPD_BUSY_CFG));
+GxEPD2_BW<GxEPD2_154_GDEY0154D67, GxEPD2_154_GDEY0154D67::HEIGHT> epd_display(GxEPD2_154_GDEY0154D67(PIN_EPD_CS_CFG, PIN_EPD_DC_CFG, PIN_EPD_RST_CFG, PIN_EPD_BUSY_CFG));
 HardwareSerial mhSerial(1);
 HardwareSerial scannerSerial(2);
 
@@ -98,14 +98,12 @@ struct FontDefinition {
 };
 
 static const FontDefinition fontDefinitions[] = {
-    {&GoogleSans140, 1, 1, "GoogleSans140"},
-    {&GoogleSans100, 2, 2, "GoogleSans100"},
-    {&GoogleSans60, 3, 3, "GoogleSans60"},
-    {&GoogleSans50, 4, 4, "GoogleSans50"},
-    {&GoogleSans35, 6, 5, "GoogleSans35"},
-    {&GoogleSans20, 10, 8, "GoogleSans20"},
-    {&GoogleSans15, 13, 12, "GoogleSans15"},
-    {&GoogleSans10, 18, 15, "GoogleSans10"},
+    {&lv_font_montserrat_48, 2, 2, "montserrat_48"},
+    {&lv_font_montserrat_48, 3, 3, "montserrat_48"},
+    {&lv_font_montserrat_28, 5, 4, "montserrat_28"},
+    {&lv_font_montserrat_28, 10, 8, "montserrat_28"},
+    {&lv_font_montserrat_14, 12, 12, "montserrat_14"},
+    {&lv_font_montserrat_14, 18, 15, "montserrat_14"},
 };
 
 static const uint8_t kFontCount = sizeof(fontDefinitions) / sizeof(fontDefinitions[0]);
@@ -440,7 +438,7 @@ static void epd_flush_cb(lv_disp_drv_t* drv, const lv_area_t* area, lv_color_t* 
         for (uint16_t x = 0; x < width; ++x) {
             const uint32_t index = static_cast<uint32_t>(y) * width + x;
             const lv_color_t color = color_p[index];
-            const uint16_t epdColor = (color.full == LV_COLOR_WHITE.full) ? GxEPD_WHITE : GxEPD_BLACK;
+            const uint16_t epdColor = (color.full == lv_color_white().full) ? GxEPD_WHITE : GxEPD_BLACK;
             epd_display.drawPixel(flush_area.x1 + x, flush_area.y1 + y, epdColor);
         }
     }
@@ -450,10 +448,10 @@ static void epd_flush_cb(lv_disp_drv_t* drv, const lv_area_t* area, lv_color_t* 
 
 void setupLvgl() {
     lv_init();
-    static lv_color_t lv_framebuffer[EPD_WIDTH * EPD_HEIGHT];
+    static lv_color_t lv_framebuffer[EPD_WIDTH * 40];
     static lv_disp_draw_buf_t draw_buf;
     static lv_disp_drv_t disp_drv;
-    lv_disp_draw_buf_init(&draw_buf, lv_framebuffer, nullptr, EPD_WIDTH * EPD_HEIGHT);
+    lv_disp_draw_buf_init(&draw_buf, lv_framebuffer, nullptr, EPD_WIDTH * 40);
     lv_disp_drv_init(&disp_drv);
     disp_drv.hor_res = EPD_WIDTH;
     disp_drv.ver_res = EPD_HEIGHT;
@@ -472,7 +470,7 @@ void buildUi() {
     lv_obj_set_width(display_label, EPD_WIDTH);
     lv_label_set_long_mode(display_label, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_color(display_label, lv_color_black(), LV_PART_MAIN);
-    lv_obj_set_style_text_font(display_label, &GoogleSans35, LV_PART_MAIN);
+    lv_obj_set_style_text_font(display_label, &lv_font_montserrat_28, LV_PART_MAIN);
     lv_obj_set_style_bg_color(display_label, lv_color_white(), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(display_label, LV_OPA_COVER, LV_PART_MAIN);
     lv_label_set_text(display_label, "Ready");
