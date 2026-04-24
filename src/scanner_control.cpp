@@ -17,7 +17,7 @@ void setupScannerPins() {
     pinMode(PIN_QR_BCTRIG_CFG, OUTPUT);
     digitalWrite(PIN_QR_BCTRIG_CFG, HIGH);
 #endif
-    // Keep scanner reset and trigger lines inactive by default.
+    Serial.println("[DEBUG] Scanner control pins configured");
 }
 
 void initializeScanner() {
@@ -63,10 +63,15 @@ void scannerOff() {
 #endif
 
 void forwardScannerData(HardwareSerial& source, HardwareSerial& destination) {
+    if (!source.available()) {
+        return;
+    }
+    Serial.println("[DEBUG] Forwarding scanner data to Master");
     while (source.available()) {
         const char c = source.read();
         if (c == '\r' || c == '\n') {
             if (scannerBuffer.length() > 0) {
+                Serial.printf("[DEBUG] Scanner line: %s\n", scannerBuffer.c_str());
                 destination.print(scannerBuffer);
                 destination.print("\r\n");
                 scannerBuffer = "";
@@ -74,6 +79,7 @@ void forwardScannerData(HardwareSerial& source, HardwareSerial& destination) {
         } else {
             scannerBuffer += c;
             if (scannerBuffer.length() > 240) {
+                Serial.printf("[DEBUG] Scanner chunk: %s\n", scannerBuffer.c_str());
                 destination.print(scannerBuffer);
                 destination.print("\r\n");
                 scannerBuffer = "";

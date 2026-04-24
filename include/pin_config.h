@@ -12,6 +12,9 @@
 #ifndef PIN_EPD_CS
 #define PIN_EPD_CS 36
 #endif
+#ifndef PIN_EPD_CS2
+#define PIN_EPD_CS2 -1
+#endif
 #ifndef PIN_EPD_DC
 #define PIN_EPD_DC 35
 #endif
@@ -53,6 +56,7 @@
 constexpr int8_t PIN_BOOT_BUTTON_CFG = PIN_BOOT_BUTTON;
 constexpr int8_t PIN_RGB_LED_CFG = PIN_RGB_LED;
 constexpr int8_t PIN_EPD_CS_CFG = PIN_EPD_CS;
+constexpr int8_t PIN_EPD_CS2_CFG = PIN_EPD_CS2;
 constexpr int8_t PIN_EPD_DC_CFG = PIN_EPD_DC;
 constexpr int8_t PIN_EPD_RST_CFG = PIN_EPD_RST;
 constexpr int8_t PIN_EPD_BUSY_CFG = PIN_EPD_BUSY;

@@ -28,20 +28,38 @@ Il primo byte del pacchetto determina il tipo di dato:
 
 ## 5. Pacchetto `0x01`: visualizzazione stringa
 
-Formato:
+Formato base:
 - `0x01`
 - `LEN`
 - `Ch0, Ch1, ..., ChN`
 
 Dove:
-- `LEN` = numero di caratteri della stringa
+- `LEN` = numero di caratteri della stringa (fino a 127)
 - `Ch0..ChN` = caratteri ASCII da visualizzare
 
 Note:
 - È ammesso un carattere `CR` per indicare una rottura di riga.
 - Prima di pubblicare la nuova stringa, la scheda esegue un refresh parziale per cancellare il testo precedente.
 
-### 5.1 Regole di layout e font
+### 5.1 Formato esteso con posizionamento e font
+
+Se il byte `LEN` vale `0xFF`, il pacchetto usa il formato esteso:
+- `0x01`
+- `0xFF`
+- `font#`
+- `pos_x`
+- `pos_y`
+- `Ch0, Ch1, ..., ChN`
+- `0x00`
+
+Dove:
+- `font#` = valore da `1` a `6`, con `1` = font più piccolo e `6` = font più grande
+- `pos_x`, `pos_y` = coordinate in pixel riferite all’angolo superiore sinistro della finestra di visualizzazione
+- la stringa è terminata da `0x00`
+
+Questo formato permette di inviare testo con font e posizione esplicita.
+
+### 5.2 Regole di layout e font
 La stringa ricevuta deve essere impaginata sul display con queste regole:
 - scegliere il font più grande possibile per contenere l’intero testo;
 - ridurre la dimensione del font se necessario fino a che il testo si adatta;

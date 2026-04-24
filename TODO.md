@@ -57,3 +57,4 @@
 13. Impostare un flag di compilazione per attivare il controllo dello scanner tramite seriale o Pin TRIG e RST (macro: `SCANNER_CONTROL_USE_SERIAL` / `SCANNER_CONTROL_USE_TRIGGER`)
 14. commentare tutte le funzioni descrivendo i parametri , la logica di funzionamente  i valori edi ritorno
 15. dividi main.ccp portanto le parti scanner led seriali e protocollo in file separati
+16. implementiamo una variante per il protocollo di invio delle stringhe: se il parametro lunghezza è = 0xFF allora il formato della stringa diventa : 0x01 + 0xFF + font#+ pos_x + posy + stringa +0x00 dove font# è un valore da 1 (font più piccolo) a 6 (font più grande), posx e posy posizione a partire dall'angolo superiore sx della finestra, stringa è la stringa da inviare. Per gli altri invii di stringhe la lunghezza massima è 127 caratteri - implementato

@@ -14,11 +14,23 @@
 #define DISPLAY_UPDATE_INTERVAL_SEC 15
 #endif
 
+#if defined(USE_EPD_GDEY1085F51)
+constexpr uint16_t EPD_WIDTH = 1360;
+constexpr uint16_t EPD_HEIGHT = 480;
+#else
 constexpr uint16_t EPD_WIDTH = 200;
 constexpr uint16_t EPD_HEIGHT = 200;
+#endif
 constexpr uint8_t EPD_ROTATION = 0;
 
-GxEPD2_BW<GxEPD2_154_GDEY0154D67, GxEPD2_154_GDEY0154D67::HEIGHT> epd_display(GxEPD2_154_GDEY0154D67(PIN_EPD_CS_CFG, PIN_EPD_DC_CFG, PIN_EPD_RST_CFG, PIN_EPD_BUSY_CFG));
+#if defined(USE_EPD_GDEY1085F51)
+static_assert(PIN_EPD_CS2_CFG >= 0, "PIN_EPD_CS2 must be defined for GDEY1085F51");
+GxEPD2_BW<GxEPD2_1085_GDEM1085T51, GxEPD2_1085_GDEM1085T51::HEIGHT> epd_display(
+    GxEPD2_1085_GDEM1085T51(PIN_EPD_CS_CFG, PIN_EPD_DC_CFG, PIN_EPD_RST_CFG, PIN_EPD_BUSY_CFG, PIN_EPD_CS2_CFG));
+#else
+GxEPD2_BW<GxEPD2_154_GDEY0154D67, GxEPD2_154_GDEY0154D67::HEIGHT> epd_display(
+    GxEPD2_154_GDEY0154D67(PIN_EPD_CS_CFG, PIN_EPD_DC_CFG, PIN_EPD_RST_CFG, PIN_EPD_BUSY_CFG));
+#endif
 HardwareSerial mhSerial(1);
 HardwareSerial scannerSerial(2);
 
@@ -36,6 +48,9 @@ HardwareSerial scannerSerial(2);
  */
 void setup() {
     Serial.begin(115200);
+    Serial.println("[DEBUG] Serial debug port initialized");
+    Serial.printf("[DEBUG] Master UART RX=%d TX=%d, Scanner UART RX=%d TX=%d\n",
+                  PIN_RX_ESP_CFG, PIN_TX_ESP_CFG, PIN_SCANNER_RX_CFG, PIN_SCANNER_TX_CFG);
     mhSerial.begin(9800, SERIAL_8N1, PIN_RX_ESP_CFG, PIN_TX_ESP_CFG);
     scannerSerial.begin(9600, SERIAL_8N1, PIN_SCANNER_RX_CFG, PIN_SCANNER_TX_CFG);
     pinMode(PIN_BOOT_BUTTON_CFG, INPUT_PULLUP);
@@ -44,7 +59,7 @@ void setup() {
     setupDisplay();
     setupLvgl();
     buildUi();
-    Serial.println("EPaperQr firmware started");
+    Serial.println("[DEBUG] EPaperQr firmware started");
 }
 
 /**
@@ -56,6 +71,12 @@ void setup() {
  * Non restituisce valori.
  */
 void loop() {
+    static uint32_t lastLoopLog = 0;
+    if (millis() - lastLoopLog > 10000) {
+        Serial.println("[DEBUG] Main loop heartbeat");
+        lastLoopLog = millis();
+    }
+
     handleMasterSerial(mhSerial
 #if defined(SCANNER_CONTROL_USE_SERIAL)
         , scannerSerial
@@ -271,9 +292,9 @@ uint8_t selectFontIndex(const String& text) {
     const bool numeric = isNumericOnly(normalized);
     std::vector<uint8_t> candidates;
     if (numeric) {
-        candidates = {0, 1, 2, 3, 4, 5, 6, 7};
+        candidates = {0, 1, 2, 3, 4, 5};
     } else {
-        candidates = {3, 4, 5, 6, 7};
+        candidates = {3, 4, 5};
     }
     for (uint8_t index : candidates) {
         if (fitsInFont(normalized, fontDefinitions[index])) {
@@ -281,6 +302,18 @@ uint8_t selectFontIndex(const String& text) {
         }
     }
     return candidates.back();
+}
+
+static uint8_t resolveExtendedFontIndex(uint8_t fontNumber) {
+    switch (fontNumber) {
+        case 1: return 4;
+        case 2: return 5;
+        case 3: return 2;
+        case 4: return 3;
+        case 5: return 1;
+        case 6: return 0;
+        default: return 4;
+    }
 }
 
 /**
@@ -314,6 +347,19 @@ void displayText(const String& raw_text) {
     lv_label_set_text(display_label, output.c_str());
     lv_obj_align(display_label, LV_ALIGN_CENTER, 0, 0);
     Serial.printf("Display text using %s\n", fontDef.name);
+}
+
+void displayText(const String& raw_text, uint8_t fontNumber, uint8_t x, uint8_t y) {
+    const String normalized = normalizeText(raw_text);
+    const uint8_t fontIndex = resolveExtendedFontIndex(fontNumber);
+    const auto& fontDef = fontDefinitions[fontIndex];
+    String output = normalized;
+    const int32_t width = static_cast<int32_t>(EPD_WIDTH) - x;
+    lv_obj_set_style_text_font(display_label, fontDef.font, LV_PART_MAIN);
+    lv_label_set_text(display_label, output.c_str());
+    lv_obj_set_width(display_label, width > 0 ? width : 0);
+    lv_obj_set_pos(display_label, x, y);
+    Serial.printf("[DEBUG] Extended display text font#%u pos=(%u,%u) len=%u\n", fontNumber, x, y, output.length());
 }
 
 /**

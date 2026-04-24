@@ -25,6 +25,10 @@ struct CommandParser {
     uint8_t command = 0;
     uint8_t payloadLen = 0;
     uint8_t payloadIndex = 0;
+    bool extendedText = false;
+    uint8_t fontNumber = 0;
+    uint8_t posX = 0;
+    uint8_t posY = 0;
     uint8_t payload[256] = {0};
 };
 
@@ -35,11 +39,13 @@ static void processMhSerialByte(uint8_t b
     , HardwareSerial& scannerSerial
 #endif
 ) {
+    Serial.printf("[DEBUG] Received byte: 0x%02X state=%d\n", b, static_cast<int>(parser.state));
     switch (parser.state) {
         case PacketState::WAIT_COMMAND:
             if (b == PKT_COMMAND || b == PKT_TEXT || b == PKT_LED_VALUES) {
                 parser.command = b;
                 parser.state = PacketState::WAIT_VALUE;
+                Serial.printf("[DEBUG] Packet type %u detected\n", b);
             }
             break;
         case PacketState::WAIT_VALUE:
@@ -73,13 +79,23 @@ static void processMhSerialByte(uint8_t b
                 }
                 parser.state = PacketState::WAIT_COMMAND;
             } else if (parser.command == PKT_TEXT) {
-                parser.payloadLen = b;
                 parser.payloadIndex = 0;
-                if (parser.payloadLen == 0) {
-                    displayText("");
-                    parser.state = PacketState::WAIT_COMMAND;
-                } else {
+                parser.extendedText = false;
+                parser.fontNumber = 0;
+                parser.posX = 0;
+                parser.posY = 0;
+                if (b == 0xFF) {
+                    parser.extendedText = true;
+                    parser.payloadLen = 0;
                     parser.state = PacketState::RECEIVE_PAYLOAD;
+                } else {
+                    parser.payloadLen = b;
+                    if (parser.payloadLen == 0) {
+                        displayText("");
+                        parser.state = PacketState::WAIT_COMMAND;
+                    } else {
+                        parser.state = PacketState::RECEIVE_PAYLOAD;
+                    }
                 }
             } else if (parser.command == PKT_LED_VALUES) {
                 parser.payloadLen = 12;
@@ -88,15 +104,41 @@ static void processMhSerialByte(uint8_t b
             }
             break;
         case PacketState::RECEIVE_PAYLOAD:
-            parser.payload[parser.payloadIndex++] = b;
-            if (parser.payloadIndex >= parser.payloadLen) {
-                if (parser.command == PKT_TEXT) {
-                    parser.payload[parser.payloadLen] = '\0';
-                    displayText(String(reinterpret_cast<char*>(parser.payload)));
-                } else if (parser.command == PKT_LED_VALUES) {
-                    applyLedValues(parser.payload);
+            if (parser.extendedText) {
+                if (parser.payloadIndex == 0) {
+                    parser.fontNumber = b;
+                } else if (parser.payloadIndex == 1) {
+                    parser.posX = b;
+                } else if (parser.payloadIndex == 2) {
+                    parser.posY = b;
+                } else {
+                    if (b == 0x00) {
+                        parser.payload[parser.payloadLen] = '\0';
+                        Serial.printf("[DEBUG] Complete extended text payload: font=%u x=%u y=%u text=%s\n",
+                                      parser.fontNumber, parser.posX, parser.posY,
+                                      reinterpret_cast<char*>(parser.payload));
+                        displayText(String(reinterpret_cast<char*>(parser.payload)), parser.fontNumber, parser.posX, parser.posY);
+                        parser.state = PacketState::WAIT_COMMAND;
+                        break;
+                    }
+                    if (parser.payloadLen < sizeof(parser.payload) - 1) {
+                        parser.payload[parser.payloadLen++] = b;
+                    }
                 }
-                parser.state = PacketState::WAIT_COMMAND;
+                parser.payloadIndex++;
+            } else {
+                parser.payload[parser.payloadIndex++] = b;
+                if (parser.payloadIndex >= parser.payloadLen) {
+                    if (parser.command == PKT_TEXT) {
+                        parser.payload[parser.payloadLen] = '\0';
+                        Serial.printf("[DEBUG] Complete text payload: %s\n", reinterpret_cast<char*>(parser.payload));
+                        displayText(String(reinterpret_cast<char*>(parser.payload)));
+                    } else if (parser.command == PKT_LED_VALUES) {
+                        Serial.println("[DEBUG] Complete LED payload received");
+                        applyLedValues(parser.payload);
+                    }
+                    parser.state = PacketState::WAIT_COMMAND;
+                }
             }
             break;
     }
@@ -107,6 +149,10 @@ void handleMasterSerial(HardwareSerial& source
     , HardwareSerial& scannerSerial
 #endif
 ) {
+    if (!source.available()) {
+        return;
+    }
+    Serial.printf("[DEBUG] Master serial available: %u bytes\n", source.available());
     while (source.available()) {
         const uint8_t b = source.read();
         processMhSerialByte(b
