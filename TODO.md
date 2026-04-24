@@ -1,7 +1,7 @@
 # modifiche per nuova scheda EpaperQr
 
 
-1. Dobbiamo convertire questo progetto pensato per una eps32s3 e un pannello epaper a 4 colori modificando le specifiche del pannello e del processore ed intgrando il nuovo hardware
+1. Dobbiamo convertire questo progetto pensato per una eps32s2 e un pannello epaper a 4 colori modificando le specifiche del pannello e del processore ed intgrando il nuovo hardware
 2. Impostare il processore a ESP32-S2-MINI-2-N4
 3. il pannello epaper è il Waveshare 1.54 pollici E-Paper Raw Display Panel V2 200 x 200 , che utilizza un pannello goodDisplay GDEY0154D67. I driver sono in  https://github.com/ZinggJM/GxEPD2
 4. tabella Pin
@@ -54,3 +54,6 @@
 10. la pubblicazione di una stringa va preceduta dalla cancellazione del precedente stringa con un refresh parziale
 11. va calcolato il numero di righe necessarie contando le parole, organizzandole in righe tenedo conto del numero di caratteri per riga provando prima con il font più grande a diminuire di dimensione fino a trovare quella che permette la visualizzazione del testo intero. Le righe vanno composte raggruppando quante più parole possibili su una riga per poi passare alla riga successiva. Se il testo intero non è rappresentabile utilizando tutte le righe a disposizione verrà troncato lasciano gli ultimi 4 charatteri per indicare ' ...'
 12. La gestione dello scanner newland N1-W prevede una fase di inizializzazione con l'invio di stringhe per il setup, dopo di che si rimane in attesa di letture che forniranno un codice che sarà ritrasmesso su TXesp
+13. Impostare un flag di compilazione per attivare il controllo dello scanner tramite seriale o Pin TRIG e RST (macro: `SCANNER_CONTROL_USE_SERIAL` / `SCANNER_CONTROL_USE_TRIGGER`)
+14. commentare tutte le funzioni descrivendo i parametri , la logica di funzionamente  i valori edi ritorno
+15. dividi main.ccp portanto le parti scanner led seriali e protocollo in file separati

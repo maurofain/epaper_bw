@@ -1,7 +1,11 @@
 #include <Arduino.h>
 #include <SPI.h>
 #include <GxEPD2_BW.h>
-#include <Adafruit_NeoPixel.h>
+#include "pin_config.h"
+#include "display.h"
+#include "led_control.h"
+#include "scanner_control.h"
+#include "master_protocol.h"
 #include "lv_conf.h"
 #include <lvgl.h>
 #include <vector>
@@ -10,85 +14,63 @@
 #define DISPLAY_UPDATE_INTERVAL_SEC 15
 #endif
 
-#ifndef PIN_BOOT_BUTTON
-#define PIN_BOOT_BUTTON 4
-#endif
-#ifndef PIN_RGB_LED
-#define PIN_RGB_LED 3
-#endif
-#ifndef PIN_EPD_BUSY_ACTIVE_LEVEL
-#define EPD_BUSY_ACTIVE_LEVEL LOW
-#endif
-
-#ifndef PIN_EPD_CS
-#define PIN_EPD_CS 36
-#endif
-#ifndef PIN_EPD_DC
-#define PIN_EPD_DC 35
-#endif
-#ifndef PIN_EPD_RST
-#define PIN_EPD_RST 34
-#endif
-#ifndef PIN_EPD_BUSY
-#define PIN_EPD_BUSY 33
-#endif
-#ifndef PIN_SPI_SCK
-#define PIN_SPI_SCK 37
-#endif
-#ifndef PIN_SPI_MOSI
-#define PIN_SPI_MOSI 38
-#endif
-#ifndef PIN_SPI_MISO
-#define PIN_SPI_MISO -1
-#endif
-
-#ifndef PIN_SCANNER_TX
-#define PIN_SCANNER_TX 17
-#endif
-#ifndef PIN_SCANNER_RX
-#define PIN_SCANNER_RX 18
-#endif
-#ifndef PIN_RX_ESP
-#define PIN_RX_ESP 40
-#endif
-#ifndef PIN_TX_ESP
-#define PIN_TX_ESP 39
-#endif
-#ifndef PIN_QR_BCRES
-#define PIN_QR_BCRES 42
-#endif
-#ifndef PIN_QR_BCTRIG
-#define PIN_QR_BCTRIG 45
-#endif
-
 constexpr uint16_t EPD_WIDTH = 200;
 constexpr uint16_t EPD_HEIGHT = 200;
 constexpr uint8_t EPD_ROTATION = 0;
 
-constexpr int8_t PIN_EPD_CS_CFG = PIN_EPD_CS;
-constexpr int8_t PIN_EPD_DC_CFG = PIN_EPD_DC;
-constexpr int8_t PIN_EPD_RST_CFG = PIN_EPD_RST;
-constexpr int8_t PIN_EPD_BUSY_CFG = PIN_EPD_BUSY;
-constexpr int8_t PIN_SPI_SCK_CFG = PIN_SPI_SCK;
-constexpr int8_t PIN_SPI_MOSI_CFG = PIN_SPI_MOSI;
-constexpr int8_t PIN_SPI_MISO_CFG = PIN_SPI_MISO;
-constexpr int8_t PIN_BOOT_BUTTON_CFG = PIN_BOOT_BUTTON;
-constexpr int8_t PIN_RGB_LED_CFG = PIN_RGB_LED;
-constexpr int8_t PIN_SCANNER_TX_CFG = PIN_SCANNER_TX;
-constexpr int8_t PIN_SCANNER_RX_CFG = PIN_SCANNER_RX;
-constexpr int8_t PIN_RX_ESP_CFG = PIN_RX_ESP;
-constexpr int8_t PIN_TX_ESP_CFG = PIN_TX_ESP;
-constexpr int8_t PIN_QR_BCRES_CFG = PIN_QR_BCRES;
-constexpr int8_t PIN_QR_BCTRIG_CFG = PIN_QR_BCTRIG;
-
-Adafruit_NeoPixel rgb_led(4, PIN_RGB_LED_CFG, NEO_GRB + NEO_KHZ800);
 GxEPD2_BW<GxEPD2_154_GDEY0154D67, GxEPD2_154_GDEY0154D67::HEIGHT> epd_display(GxEPD2_154_GDEY0154D67(PIN_EPD_CS_CFG, PIN_EPD_DC_CFG, PIN_EPD_RST_CFG, PIN_EPD_BUSY_CFG));
 HardwareSerial mhSerial(1);
 HardwareSerial scannerSerial(2);
 
+// -----------------------------------------------------------------------------
+// Sezione 1: Logica generale con loop principale
+// -----------------------------------------------------------------------------
+
+/**
+ * setup
+ * Inizializza le periferiche principali e avvia le interfacce seriali.
+ * - Serial: porta di debug a 115200 baud
+ * - mhSerial: connessione verso la scheda Master a 9800 baud
+ * - scannerSerial: connessione verso lo scanner N1-W a 9600 baud
+ * Non restituisce valori.
+ */
+void setup() {
+    Serial.begin(115200);
+    mhSerial.begin(9800, SERIAL_8N1, PIN_RX_ESP_CFG, PIN_TX_ESP_CFG);
+    scannerSerial.begin(9600, SERIAL_8N1, PIN_SCANNER_RX_CFG, PIN_SCANNER_TX_CFG);
+    pinMode(PIN_BOOT_BUTTON_CFG, INPUT_PULLUP);
+    setupRgbLed();
+    setupScannerPins();
+    setupDisplay();
+    setupLvgl();
+    buildUi();
+    Serial.println("EPaperQr firmware started");
+}
+
+/**
+ * loop
+ * Ciclo principale dell’applicazione.
+ * - processa i byte in arrivo dalla scheda Master
+ * - inoltra i dati ricevuti dallo scanner verso la scheda Master
+ * - aggiorna la libreria LVGL
+ * Non restituisce valori.
+ */
+void loop() {
+    handleMasterSerial(mhSerial
+#if defined(SCANNER_CONTROL_USE_SERIAL)
+        , scannerSerial
+#endif
+    );
+    forwardScannerData(scannerSerial, mhSerial);
+    lv_timer_handler();
+    delay(5);
+}
+
+// -----------------------------------------------------------------------------
+// Sezione 3: Gestione del display e LVGL
+// -----------------------------------------------------------------------------
+
 static lv_obj_t* display_label = nullptr;
-static bool scannerInitialized = false;
-static String scannerBuffer;
 
 struct FontDefinition {
     const lv_font_t* font;
@@ -108,6 +90,12 @@ static const FontDefinition fontDefinitions[] = {
 
 static const uint8_t kFontCount = sizeof(fontDefinitions) / sizeof(fontDefinitions[0]);
 
+/**
+ * isNumericOnly
+ * Verifica se una stringa contiene solo caratteri numerici, ignorando CR, LF e spazi.
+ * @param text Stringa in ingresso.
+ * @return true se la stringa è composta esclusivamente da cifre numeriche, false altrimenti.
+ */
 bool isNumericOnly(const String& text) {
     for (size_t i = 0; i < text.length(); ++i) {
         char c = text.charAt(i);
@@ -119,6 +107,12 @@ bool isNumericOnly(const String& text) {
     return true;
 }
 
+/**
+ * normalizeText
+ * Converte CR in LF e tab in spazio per una gestione uniforme del testo.
+ * @param text Stringa di input.
+ * @return Stringa normalizzata.
+ */
 String normalizeText(const String& text) {
     String normalized;
     normalized.reserve(text.length());
@@ -135,6 +129,16 @@ String normalizeText(const String& text) {
     return normalized;
 }
 
+/**
+ * wrapText
+ * Avvolge il testo in righe in base alla larghezza massima permessa dal font.
+ * - considera i caratteri di fine riga '\n'
+ * - tiene conto del limite massimo di caratteri per riga del font
+ * - tronca le parole che eccedono la larghezza massima
+ * @param text Testo normalizzato da avvolgere.
+ * @param fontDef Definizione del font contenente maxCharsPerLine.
+ * @return Vettore di righe formattate.
+ */
 std::vector<String> wrapText(const String& text, const FontDefinition& fontDef) {
     std::vector<String> lines;
     String currentLine;
@@ -204,6 +208,12 @@ std::vector<String> wrapText(const String& text, const FontDefinition& fontDef) 
     return lines;
 }
 
+/**
+ * joinLines
+ * Costruisce una singola stringa unendo le righe separate da '\n'.
+ * @param lines Vettore di righe di testo.
+ * @return Stringa concatenata con line feed.
+ */
 String joinLines(const std::vector<String>& lines) {
     String result;
     for (size_t i = 0; i < lines.size(); ++i) {
@@ -215,11 +225,25 @@ String joinLines(const std::vector<String>& lines) {
     return result;
 }
 
+/**
+ * fitsInFont
+ * Verifica se una stringa formattata con un font specifico rientra nel numero massimo di righe disponibili.
+ * @param text Testo normalizzato.
+ * @param fontDef Definizione del font.
+ * @return true se il testo rientra, false altrimenti.
+ */
 bool fitsInFont(const String& text, const FontDefinition& fontDef) {
     auto lines = wrapText(text, fontDef);
     return lines.size() <= fontDef.maxLines;
 }
 
+/**
+ * truncateText
+ * Tronca il testo se supera le righe disponibili e aggiunge " ..." all’ultima riga.
+ * @param text Testo normalizzato.
+ * @param fontDef Definizione del font.
+ * @return Testo eventualmente troncato.
+ */
 String truncateText(const String& text, const FontDefinition& fontDef) {
     auto lines = wrapText(text, fontDef);
     if (lines.size() <= fontDef.maxLines) {
@@ -236,6 +260,12 @@ String truncateText(const String& text, const FontDefinition& fontDef) {
     return joinLines(lines);
 }
 
+/**
+ * selectFontIndex
+ * Seleziona l’indice del font più adatto in base al contenuto del testo e alla lunghezza.
+ * @param text Testo originale.
+ * @return Indice del font selezionato dall’array fontDefinitions.
+ */
 uint8_t selectFontIndex(const String& text) {
     const String normalized = normalizeText(text);
     const bool numeric = isNumericOnly(normalized);
@@ -253,6 +283,11 @@ uint8_t selectFontIndex(const String& text) {
     return candidates.back();
 }
 
+/**
+ * clearDisplay
+ * Cancella completamente il display e resetta l’etichetta LVGL se presente.
+ * Non prende parametri e non restituisce valori.
+ */
 void clearDisplay() {
     epd_display.setFullWindow();
     epd_display.fillScreen(GxEPD_WHITE);
@@ -263,20 +298,12 @@ void clearDisplay() {
     }
 }
 
-void initializeScanner() {
-    if (scannerInitialized) {
-        return;
-    }
-    scannerInitialized = true;
-    pinMode(PIN_QR_BCRES_CFG, OUTPUT);
-    pinMode(PIN_QR_BCTRIG_CFG, OUTPUT);
-    digitalWrite(PIN_QR_BCRES_CFG, HIGH);
-    digitalWrite(PIN_QR_BCTRIG_CFG, LOW);
-    delay(50);
-    Serial.println("Scanner control pins configured.");
-    Serial.println("Scanner initialization phase complete. Add actual N1-W setup commands if required.");
-}
-
+/**
+ * displayText
+ * Gestisce la normalizzazione, selezione del font e la visualizzazione del testo su LVGL.
+ * @param raw_text Testo ricevuto in input.
+ * Non restituisce valori.
+ */
 void displayText(const String& raw_text) {
     const String normalized = normalizeText(raw_text);
     const uint8_t fontIndex = selectFontIndex(normalized);
@@ -289,110 +316,11 @@ void displayText(const String& raw_text) {
     Serial.printf("Display text using %s\n", fontDef.name);
 }
 
-void applyLedValues(const uint8_t* values) {
-    for (uint8_t i = 0; i < 4; ++i) {
-        const uint8_t r = values[i * 3];
-        const uint8_t g = values[i * 3 + 1];
-        const uint8_t b = values[i * 3 + 2];
-        rgb_led.setPixelColor(i, rgb_led.Color(r, g, b));
-    }
-    rgb_led.show();
-}
-
-void forwardScannerData() {
-    while (scannerSerial.available()) {
-        const char c = scannerSerial.read();
-        if (c == '\r' || c == '\n') {
-            if (scannerBuffer.length() > 0) {
-                mhSerial.print(scannerBuffer);
-                mhSerial.print("\r\n");
-                scannerBuffer = "";
-            }
-        } else {
-            scannerBuffer += c;
-            if (scannerBuffer.length() > 240) {
-                mhSerial.print(scannerBuffer);
-                mhSerial.print("\r\n");
-                scannerBuffer = "";
-            }
-        }
-    }
-}
-
-enum class PacketState {
-    WAIT_COMMAND,
-    WAIT_VALUE,
-    RECEIVE_PAYLOAD,
-};
-
-struct CommandParser {
-    PacketState state = PacketState::WAIT_COMMAND;
-    uint8_t command = 0;
-    uint8_t payloadLen = 0;
-    uint8_t payloadIndex = 0;
-    uint8_t payload[256] = {0};
-};
-
-CommandParser parser;
-
-void processMhSerialByte(uint8_t b) {
-    switch (parser.state) {
-        case PacketState::WAIT_COMMAND:
-            if (b == 0x00 || b == 0x01 || b == 0x02) {
-                parser.command = b;
-                parser.state = (b == 0x00) ? PacketState::WAIT_VALUE : PacketState::WAIT_VALUE;
-            }
-            break;
-        case PacketState::WAIT_VALUE:
-            if (parser.command == 0x00) {
-                if (b == 0x00) {
-                    Serial.println("Command 0x00 0x00: clear full display");
-                    clearDisplay();
-                } else if (b == 0x01) {
-                    Serial.println("Command 0x00 0x01: scanner init + clear display");
-                    initializeScanner();
-                    clearDisplay();
-                } else {
-                    Serial.printf("Unknown 0x00 command: 0x%02X\n", b);
-                }
-                parser.state = PacketState::WAIT_COMMAND;
-            } else if (parser.command == 0x01) {
-                parser.payloadLen = b;
-                parser.payloadIndex = 0;
-                if (parser.payloadLen == 0) {
-                    displayText("");
-                    parser.state = PacketState::WAIT_COMMAND;
-                } else {
-                    parser.state = PacketState::RECEIVE_PAYLOAD;
-                }
-            } else if (parser.command == 0x02) {
-                parser.payloadLen = 12;
-                parser.payloadIndex = 0;
-                parser.state = PacketState::RECEIVE_PAYLOAD;
-            }
-            break;
-        case PacketState::RECEIVE_PAYLOAD:
-            parser.payload[parser.payloadIndex++] = b;
-            if (parser.payloadIndex >= parser.payloadLen) {
-                if (parser.command == 0x01) {
-                    parser.payload[parser.payloadLen] = '\0';
-                    displayText(String(reinterpret_cast<char*>(parser.payload)));
-                } else if (parser.command == 0x02) {
-                    applyLedValues(parser.payload);
-                }
-                parser.state = PacketState::WAIT_COMMAND;
-            }
-            break;
-    }
-}
-
-void handleMhSerial() {
-    while (mhSerial.available()) {
-        const uint8_t b = mhSerial.read();
-        processMhSerialByte(b);
-    }
-}
-
+/**
+ * setupDisplay
+ * Inizializza il controller EPD, il bus SPI e l’hardware di reset del display.
+ * Non prende parametri e non restituisce valori.
+ */
 void setupDisplay() {
     pinMode(PIN_EPD_BUSY_CFG, INPUT_PULLUP);
     pinMode(PIN_EPD_RST_CFG, OUTPUT);
@@ -412,19 +340,13 @@ void setupDisplay() {
     epd_display.display(false);
 }
 
-void setupRgbLed() {
-    rgb_led.begin();
-    rgb_led.clear();
-    rgb_led.show();
-}
-
-void setupScannerPins() {
-    pinMode(PIN_QR_BCRES_CFG, OUTPUT);
-    pinMode(PIN_QR_BCTRIG_CFG, OUTPUT);
-    digitalWrite(PIN_QR_BCRES_CFG, LOW);
-    digitalWrite(PIN_QR_BCTRIG_CFG, LOW);
-}
-
+/**
+ * epd_flush_cb
+ * Callback LVGL per inviare una porzione di framebuffer al display e aggiornare l’EPD.
+ * @param drv Driver di display LVGL.
+ * @param area Area del framebuffer da aggiornare.
+ * @param color_p Buffer dei pixel.
+ */
 static void epd_flush_cb(lv_disp_drv_t* drv, const lv_area_t* area, lv_color_t* color_p) {
     lv_area_t flush_area = *area;
     if (flush_area.x1 < 0) flush_area.x1 = 0;
@@ -446,6 +368,11 @@ static void epd_flush_cb(lv_disp_drv_t* drv, const lv_area_t* area, lv_color_t* 
     lv_disp_flush_ready(drv);
 }
 
+/**
+ * setupLvgl
+ * Inizializza la libreria LVGL e la configurazione del buffer di disegno.
+ * Non prende parametri e non restituisce valori.
+ */
 void setupLvgl() {
     lv_init();
     static lv_color_t lv_framebuffer[EPD_WIDTH * 40];
@@ -461,6 +388,11 @@ void setupLvgl() {
     lv_disp_drv_register(&disp_drv);
 }
 
+/**
+ * buildUi
+ * Costruisce l’interfaccia LVGL di base con un'etichetta centrale per il testo.
+ * Non prende parametri e non restituisce valori.
+ */
 void buildUi() {
     lv_obj_t* screen = lv_scr_act();
     lv_obj_set_style_bg_color(screen, lv_color_white(), LV_PART_MAIN);
@@ -477,22 +409,3 @@ void buildUi() {
     lv_obj_align(display_label, LV_ALIGN_CENTER, 0, 0);
 }
 
-void setup() {
-    Serial.begin(115200);
-    mhSerial.begin(115200, SERIAL_8N1, PIN_RX_ESP_CFG, PIN_TX_ESP_CFG);
-    scannerSerial.begin(115200, SERIAL_8N1, PIN_SCANNER_RX_CFG, PIN_SCANNER_TX_CFG);
-    pinMode(PIN_BOOT_BUTTON_CFG, INPUT_PULLUP);
-    setupRgbLed();
-    setupScannerPins();
-    setupDisplay();
-    setupLvgl();
-    buildUi();
-    Serial.println("EPaperQr firmware started");
-}
-
-void loop() {
-    handleMhSerial();
-    forwardScannerData();
-    lv_timer_handler();
-    delay(5);
-}
