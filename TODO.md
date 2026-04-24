@@ -58,3 +58,5 @@
 14. commentare tutte le funzioni descrivendo i parametri , la logica di funzionamente  i valori edi ritorno
 15. dividi main.ccp portanto le parti scanner led seriali e protocollo in file separati
 16. implementiamo una variante per il protocollo di invio delle stringhe: se il parametro lunghezza è = 0xFF allora il formato della stringa diventa : 0x01 + 0xFF + font#+ pos_x + posy + stringa +0x00 dove font# è un valore da 1 (font più piccolo) a 6 (font più grande), posx e posy posizione a partire dall'angolo superiore sx della finestra, stringa è la stringa da inviare. Per gli altri invii di stringhe la lunghezza massima è 127 caratteri - implementato
+17. Tracciare con i LOG il traffico dati da e verso lo scanner 
+18.  al boot inizializzare il display Epaper e poi Caricare il logo  /home/mauro/Progetti/0.Clienti/MicroHard/test_epaper_bw/src/ui/logo_negative.jpg e tenerlo per 10 secondi , dopo di che uil disply è disponibile a ricevere comandi di visualizzazione

@@ -1,0 +1,13 @@
+# Target labels
+ bootloader
+# Source files and their labels
+/media/mauro/code/Progetti/0.Clienti/MicroHard/test_epaper_bw/build/CMakeFiles/bootloader
+/media/mauro/code/Progetti/0.Clienti/MicroHard/test_epaper_bw/build/CMakeFiles/bootloader.rule
+/media/mauro/code/Progetti/0.Clienti/MicroHard/test_epaper_bw/build/CMakeFiles/bootloader-complete.rule
+/media/mauro/code/Progetti/0.Clienti/MicroHard/test_epaper_bw/build/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule
+/media/mauro/code/Progetti/0.Clienti/MicroHard/test_epaper_bw/build/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule
+/media/mauro/code/Progetti/0.Clienti/MicroHard/test_epaper_bw/build/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule
+/media/mauro/code/Progetti/0.Clienti/MicroHard/test_epaper_bw/build/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule
+/media/mauro/code/Progetti/0.Clienti/MicroHard/test_epaper_bw/build/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule
+/media/mauro/code/Progetti/0.Clienti/MicroHard/test_epaper_bw/build/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule
+/media/mauro/code/Progetti/0.Clienti/MicroHard/test_epaper_bw/build/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule

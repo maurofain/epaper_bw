@@ -4,5 +4,5 @@ idf_component_register(
          "../src/scanner_control.cpp"
          "../src/master_protocol.cpp"
     INCLUDE_DIRS "../include"
-    REQUIRES arduino
+    REQUIRES arduino Adafruit_NeoPixel GxEPD2 lvgl
 )

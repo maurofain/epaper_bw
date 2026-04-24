@@ -1,0 +1,3 @@
+Command: cmake -G Ninja -DPYTHON_DEPS_CHECKED=1 -DPYTHON=/home/mauro/.espressif/python_env/idf5.5_py3.13_env/bin/python -DESP_PLATFORM=1 -DCCACHE_ENABLE=0 /media/mauro/code/Progetti/0.Clienti/MicroHard/test_epaper_bw
+ESP Insights Project commit: a8510ba-dirty
+ESP RainMaker Project commit: a8510ba-dirty
