@@ -1,8 +1,13 @@
-#include <Arduino.h>
 #include "master_protocol.h"
 #include "display.h"
 #include "led_control.h"
 #include "scanner_control.h"
+
+#include <driver/uart.h>
+#include <esp_log.h>
+#include <string>
+
+static const char* TAG = "MasterProtocol";
 
 constexpr uint8_t PKT_COMMAND = 0x00;
 constexpr uint8_t PKT_TEXT = 0x01;
@@ -36,46 +41,46 @@ static CommandParser parser;
 
 static void processMhSerialByte(uint8_t b
 #if defined(SCANNER_CONTROL_USE_SERIAL)
-    , HardwareSerial& scannerSerial
+    , uart_port_t scannerPort
 #endif
 ) {
-    Serial.printf("[DEBUG] Received byte: 0x%02X state=%d\n", b, static_cast<int>(parser.state));
+    ESP_LOGD(TAG, "Received byte: 0x%02X state=%d", b, static_cast<int>(parser.state));
     switch (parser.state) {
         case PacketState::WAIT_COMMAND:
             if (b == PKT_COMMAND || b == PKT_TEXT || b == PKT_LED_VALUES) {
                 parser.command = b;
                 parser.state = PacketState::WAIT_VALUE;
-                Serial.printf("[DEBUG] Packet type %u detected\n", b);
+                ESP_LOGD(TAG, "Packet type %u detected", b);
             }
             break;
         case PacketState::WAIT_VALUE:
             if (parser.command == PKT_COMMAND) {
                 if (b == CMD_DISPLAY_REFRESH) {
-                    Serial.println("Command 0x00 0x00: clear full display");
+                    ESP_LOGI(TAG, "Command 0x00 0x00: clear full display");
                     clearDisplay();
                 } else if (b == CMD_SCANNER_INIT_REFRESH) {
-                    Serial.println("Command 0x00 0x01: scanner init + clear display");
+                    ESP_LOGI(TAG, "Command 0x00 0x01: scanner init + clear display");
                     initializeScanner();
                     clearDisplay();
                 } else if (b == CMD_SCANNER_ON) {
-                    Serial.println("Command 0x00 0x02: scanner ON");
+                    ESP_LOGI(TAG, "Command 0x00 0x02: scanner ON");
 #if defined(SCANNER_CONTROL_USE_SERIAL)
-                    scannerOn(scannerSerial);
+                    scannerOn(scannerPort);
 #else
                     scannerOn();
 #endif
                 } else if (b == CMD_SCANNER_OFF) {
-                    Serial.println("Command 0x00 0x03: scanner OFF");
+                    ESP_LOGI(TAG, "Command 0x00 0x03: scanner OFF");
 #if defined(SCANNER_CONTROL_USE_SERIAL)
-                    scannerOff(scannerSerial);
+                    scannerOff(scannerPort);
 #else
                     scannerOff();
 #endif
                 } else if (b == CMD_LED_OFF) {
-                    Serial.println("Command 0x00 0x04: LED OFF");
+                    ESP_LOGI(TAG, "Command 0x00 0x04: LED OFF");
                     ledOff();
                 } else {
-                    Serial.printf("Unknown 0x00 command: 0x%02X\n", b);
+                    ESP_LOGW(TAG, "Unknown 0x00 command: 0x%02X", b);
                 }
                 parser.state = PacketState::WAIT_COMMAND;
             } else if (parser.command == PKT_TEXT) {
@@ -91,7 +96,7 @@ static void processMhSerialByte(uint8_t b
                 } else {
                     parser.payloadLen = b;
                     if (parser.payloadLen == 0) {
-                        displayText("");
+                        displayText(std::string());
                         parser.state = PacketState::WAIT_COMMAND;
                     } else {
                         parser.state = PacketState::RECEIVE_PAYLOAD;
@@ -113,11 +118,10 @@ static void processMhSerialByte(uint8_t b
                     parser.posY = b;
                 } else {
                     if (b == 0x00) {
-                        parser.payload[parser.payloadLen] = '\0';
-                        Serial.printf("[DEBUG] Complete extended text payload: font=%u x=%u y=%u text=%s\n",
-                                      parser.fontNumber, parser.posX, parser.posY,
-                                      reinterpret_cast<char*>(parser.payload));
-                        displayText(String(reinterpret_cast<char*>(parser.payload)), parser.fontNumber, parser.posX, parser.posY);
+                        std::string text(reinterpret_cast<char*>(parser.payload), parser.payloadLen);
+                        ESP_LOGI(TAG, "Complete extended text payload: font=%u x=%u y=%u text=%s",
+                                 parser.fontNumber, parser.posX, parser.posY, text.c_str());
+                        displayText(text, parser.fontNumber, parser.posX, parser.posY);
                         parser.state = PacketState::WAIT_COMMAND;
                         break;
                     }
@@ -130,11 +134,11 @@ static void processMhSerialByte(uint8_t b
                 parser.payload[parser.payloadIndex++] = b;
                 if (parser.payloadIndex >= parser.payloadLen) {
                     if (parser.command == PKT_TEXT) {
-                        parser.payload[parser.payloadLen] = '\0';
-                        Serial.printf("[DEBUG] Complete text payload: %s\n", reinterpret_cast<char*>(parser.payload));
-                        displayText(String(reinterpret_cast<char*>(parser.payload)));
+                        std::string text(reinterpret_cast<char*>(parser.payload), parser.payloadLen);
+                        ESP_LOGI(TAG, "Complete text payload: %s", text.c_str());
+                        displayText(text);
                     } else if (parser.command == PKT_LED_VALUES) {
-                        Serial.println("[DEBUG] Complete LED payload received");
+                        ESP_LOGI(TAG, "Complete LED payload received");
                         applyLedValues(parser.payload);
                     }
                     parser.state = PacketState::WAIT_COMMAND;
@@ -144,20 +148,26 @@ static void processMhSerialByte(uint8_t b
     }
 }
 
-void handleMasterSerial(HardwareSerial& source
+void handleMasterSerial(uart_port_t source
 #if defined(SCANNER_CONTROL_USE_SERIAL)
-    , HardwareSerial& scannerSerial
+    , uart_port_t scannerPort
 #endif
 ) {
-    if (!source.available()) {
+    size_t bufferedLen = 0;
+    uart_get_buffered_data_len(source, &bufferedLen);
+    if (bufferedLen == 0) {
         return;
     }
-    Serial.printf("[DEBUG] Master serial available: %u bytes\n", source.available());
-    while (source.available()) {
-        const uint8_t b = source.read();
+    ESP_LOGD(TAG, "Master serial available: %u bytes", static_cast<unsigned>(bufferedLen));
+    while (true) {
+        uint8_t b;
+        int len = uart_read_bytes(source, &b, 1, 0);
+        if (len <= 0) {
+            break;
+        }
         processMhSerialByte(b
 #if defined(SCANNER_CONTROL_USE_SERIAL)
-            , scannerSerial
+            , scannerPort
 #endif
         );
     }

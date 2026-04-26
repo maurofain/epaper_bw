@@ -4,7 +4,7 @@ Firmware per la scheda EpaperQr basata su ESP32-S2-MINI-2-N4 e display Waveshare
 
 ## Struttura
 
-- `platformio.ini`: configurazione build per ESP32-S2 mini
+- `CMakeLists.txt`: configurazione build per ESP-IDF
 - `include/lv_conf.h`: configurazione LVGL
 - `src/main.cpp`: logica display, parser seriale, gestione LED e scanner
 - `src/ui/fonts/user_fonts.h`: inclusione dei font GoogleSans disponibili
@@ -35,9 +35,8 @@ Nel file `src/main.cpp` sono configurati i pin per il nuovo hardware:
 ## Build / Upload
 
 ```bash
-pio run -e esp32s2_mini
-pio run -e esp32s2_mini -t upload
-pio device monitor -e esp32s2_mini
+idf.py build
+idf.py -p /dev/ttyUSB0 flash monitor
 ```
 
 ## Note

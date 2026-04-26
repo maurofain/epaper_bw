@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Arduino.h>
+#include <driver/uart.h>
+#include <cstdint>
 
 #if defined(SCANNER_CONTROL_USE_SERIAL) && defined(SCANNER_CONTROL_USE_TRIGGER)
 #error "Only one scanner control mode may be defined."
@@ -15,10 +16,10 @@
 void setupScannerPins();
 void initializeScanner();
 #if defined(SCANNER_CONTROL_USE_SERIAL)
-void scannerOn(HardwareSerial& scannerSerial);
-void scannerOff(HardwareSerial& scannerSerial);
+void scannerOn(uart_port_t scannerPort);
+void scannerOff(uart_port_t scannerPort);
 #else
 void scannerOn();
 void scannerOff();
 #endif
-void forwardScannerData(HardwareSerial& source, HardwareSerial& destination);
+void forwardScannerData(uart_port_t source, uart_port_t destination);

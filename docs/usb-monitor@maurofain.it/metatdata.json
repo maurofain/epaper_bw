@@ -1,0 +1,6 @@
+{
+  "uuid": "usb-monitor@tuonome.it",
+  "name": "USB Device Monitor",
+  "description": "Monitora dispositivi ttyACM e ttyUSB",
+  "shell-version": ["45", "46", "47"]
+}

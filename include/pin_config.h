@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #ifndef PIN_CONFIG_H
 #define PIN_CONFIG_H
 

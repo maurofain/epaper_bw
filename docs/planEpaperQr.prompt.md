@@ -4,7 +4,7 @@ TL;DR: Convertire l'attuale demo ESP32-S3 + e-paper in un firmware per la nuova 
 
 **Steps**
 1. Aggiornare la configurazione di build e pin hardware.
-   - Modificare `platformio.ini` per usare il board ESP32-S2-MINI-2-N4 corretto e definire i pin della nuova scheda.
+   - Modificare `CMakeLists.txt` per includere le librerie corrette e impostare i pin della nuova scheda.
    - Verificare e cambiare il driver GxEPD2 da `GxEPD2_213_Z98c` a quello corretto per GDEY0154D67/1.54" 200x200.
    - Disabilitare LVGL se non necessario e usare il backend Adafruit GFX/GxEPD2 diretto.
 
@@ -46,19 +46,19 @@ TL;DR: Convertire l'attuale demo ESP32-S3 + e-paper in un firmware per la nuova 
    - Collegare QR BCRES/BCTRIG secondo la specifica hardware, se necessario.
 
 8. Verifica e test.
-   - Compilare e testare con `pio run`.
+   - Compilare e testare con `idf.py build`.
    - Verificare l'inizializzazione display e i pin hardware.
    - Testare i comandi seriali con pacchetti reali e il corretto funzionamento WS2812B.
    - Validare il comportamento di line-wrapping e truncation.
 
 **Relevant files**
-- `platformio.ini` — aggiornare board, build flags e pin di compilazione.
+- `CMakeLists.txt` — aggiornare board, build flags e pin di compilazione.
 - `src/main.cpp` — adattare driver display, pin, parser seriale, font selection, LED e scanner.
 - `src/ui/fonts/` — aggiungere i font GoogleSans richiesti.
 - `include/lv_conf.h` — probabilmente non serve modificare se si disabilita LVGL.
 
 **Verification**
-1. Build success con `pio run`.
+1. Build success con `idf.py build`.
 2. Flash e log di avvio per confermare il driver e i pin.
 3. Invio di pacchetti `0x01 LEN ...` e verifica che il testo appaia sul display con font corretto.
 4. Invio di pacchetti `0x02 ...` e verifica colori WS2812B.
