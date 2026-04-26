@@ -1,6 +1,21 @@
-#include <Arduino.h>
-#include <SPI.h>
-#include <GxEPD2_BW.h>
+#include <driver/uart.h>
+#include <driver/gpio.h>
+#include <esp_timer.h>
+#include <esp_log.h>
+#include <esp_event.h>
+#include <esp_netif.h>
+#include <esp_wifi.h>
+#include <esp_http_server.h>
+#include <esp_ota_ops.h>
+#include <esp_partition.h>
+#include <esp_system.h>
+#include <nvs_flash.h>
+#include <cstring>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <string>
+#include <vector>
+
 #include "pin_config.h"
 #include "display.h"
 #include "led_control.h"
@@ -8,11 +23,19 @@
 #include "master_protocol.h"
 #include "lv_conf.h"
 #include <lvgl.h>
-#include <vector>
+
+#define LOG_TAG "EPaperQr"
+#define _LOGI(...) ESP_LOGI(LOG_TAG, __VA_ARGS__)
+#define _LOGD(...) ESP_LOGD(LOG_TAG, __VA_ARGS__)
+#define _LOGE(...) ESP_LOGE(LOG_TAG, __VA_ARGS__)
+#define _LOGW(...) ESP_LOGW(LOG_TAG, __VA_ARGS__)
 
 #ifndef DISPLAY_UPDATE_INTERVAL_SEC
 #define DISPLAY_UPDATE_INTERVAL_SEC 15
 #endif
+
+#define WIFI_SSID "FWAP02"
+#define WIFI_PASSWORD "fwxi56cgo"
 
 #if defined(USE_EPD_GDEY1085F51)
 constexpr uint16_t EPD_WIDTH = 1360;
@@ -21,74 +44,173 @@ constexpr uint16_t EPD_HEIGHT = 480;
 constexpr uint16_t EPD_WIDTH = 200;
 constexpr uint16_t EPD_HEIGHT = 200;
 #endif
-constexpr uint8_t EPD_ROTATION = 0;
 
-#if defined(USE_EPD_GDEY1085F51)
-static_assert(PIN_EPD_CS2_CFG >= 0, "PIN_EPD_CS2 must be defined for GDEY1085F51");
-GxEPD2_BW<GxEPD2_1085_GDEM1085T51, GxEPD2_1085_GDEM1085T51::HEIGHT> epd_display(
-    GxEPD2_1085_GDEM1085T51(PIN_EPD_CS_CFG, PIN_EPD_DC_CFG, PIN_EPD_RST_CFG, PIN_EPD_BUSY_CFG, PIN_EPD_CS2_CFG));
-#else
-GxEPD2_BW<GxEPD2_154_GDEY0154D67, GxEPD2_154_GDEY0154D67::HEIGHT> epd_display(
-    GxEPD2_154_GDEY0154D67(PIN_EPD_CS_CFG, PIN_EPD_DC_CFG, PIN_EPD_RST_CFG, PIN_EPD_BUSY_CFG));
+static const char* TAG = "EPaperQr";
+static const uart_port_t UART_MASTER = UART_NUM_1;
+#if defined(SCANNER_CONTROL_USE_SERIAL)
+static const uart_port_t UART_SCANNER = UART_NUM_0;
 #endif
-HardwareSerial mhSerial(1);
-HardwareSerial scannerSerial(2);
+static httpd_handle_t otaServer = nullptr;
 
-// -----------------------------------------------------------------------------
-// Sezione 1: Logica generale con loop principale
-// -----------------------------------------------------------------------------
-
-/**
- * setup
- * Inizializza le periferiche principali e avvia le interfacce seriali.
- * - Serial: porta di debug a 115200 baud
- * - mhSerial: connessione verso la scheda Master a 9800 baud
- * - scannerSerial: connessione verso lo scanner N1-W a 9600 baud
- * Non restituisce valori.
- */
-void setup() {
-    Serial.begin(115200);
-    Serial.println("[DEBUG] Serial debug port initialized");
-    Serial.printf("[DEBUG] Master UART RX=%d TX=%d, Scanner UART RX=%d TX=%d\n",
-                  PIN_RX_ESP_CFG, PIN_TX_ESP_CFG, PIN_SCANNER_RX_CFG, PIN_SCANNER_TX_CFG);
-    mhSerial.begin(9800, SERIAL_8N1, PIN_RX_ESP_CFG, PIN_TX_ESP_CFG);
-    scannerSerial.begin(9600, SERIAL_8N1, PIN_SCANNER_RX_CFG, PIN_SCANNER_TX_CFG);
-    pinMode(PIN_BOOT_BUTTON_CFG, INPUT_PULLUP);
-    setupRgbLed();
-    setupScannerPins();
-    setupDisplay();
-    setupLvgl();
-    buildUi();
-    Serial.println("[DEBUG] EPaperQr firmware started");
-}
-
-/**
- * loop
- * Ciclo principale dell’applicazione.
- * - processa i byte in arrivo dalla scheda Master
- * - inoltra i dati ricevuti dallo scanner verso la scheda Master
- * - aggiorna la libreria LVGL
- * Non restituisce valori.
- */
-void loop() {
-    static uint32_t lastLoopLog = 0;
-    if (millis() - lastLoopLog > 10000) {
-        Serial.println("[DEBUG] Main loop heartbeat");
-        lastLoopLog = millis();
+static const esp_partition_t* selectOtaTargetPartition() {
+    const esp_partition_t* running = esp_ota_get_running_partition();
+    const esp_partition_t* boot = esp_ota_get_boot_partition();
+    if (running != nullptr) {
+        _LOGI("[M] OTA running partition: %s subtype=0x%02X addr=0x%08lX size=0x%08lX",
+              running->label,
+              running->subtype,
+              static_cast<unsigned long>(running->address),
+              static_cast<unsigned long>(running->size));
+    }
+    if (boot != nullptr) {
+        _LOGI("[M] OTA boot partition: %s subtype=0x%02X addr=0x%08lX size=0x%08lX",
+              boot->label,
+              boot->subtype,
+              static_cast<unsigned long>(boot->address),
+              static_cast<unsigned long>(boot->size));
     }
 
-    handleMasterSerial(mhSerial
-#if defined(SCANNER_CONTROL_USE_SERIAL)
-        , scannerSerial
-#endif
-    );
-    forwardScannerData(scannerSerial, mhSerial);
-    lv_timer_handler();
-    delay(5);
+    const esp_partition_t* nextUpdate = esp_ota_get_next_update_partition(nullptr);
+    if (nextUpdate != nullptr) {
+        return nextUpdate;
+    }
+
+    _LOGW("[M] OTA next update partition unavailable, scanning app partitions");
+    const esp_partition_t* fallback = nullptr;
+    esp_partition_iterator_t it = esp_partition_find(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_ANY, nullptr);
+    while (it != nullptr) {
+        const esp_partition_t* part = esp_partition_get(it);
+        if (part != nullptr) {
+            _LOGI("[M] OTA app partition found: %s subtype=0x%02X addr=0x%08lX size=0x%08lX",
+                  part->label,
+                  part->subtype,
+                  static_cast<unsigned long>(part->address),
+                  static_cast<unsigned long>(part->size));
+
+            const bool isOta = part->subtype >= ESP_PARTITION_SUBTYPE_APP_OTA_MIN &&
+                               part->subtype < ESP_PARTITION_SUBTYPE_APP_OTA_MAX;
+            const bool isFactory = part->subtype == ESP_PARTITION_SUBTYPE_APP_FACTORY;
+            const bool isDifferentFromRunning = running == nullptr || part->address != running->address;
+            if (fallback == nullptr && isDifferentFromRunning && (isOta || isFactory)) {
+                fallback = part;
+            }
+        }
+        it = esp_partition_next(it);
+    }
+    return fallback;
+}
+
+static void otaRebootTask(void* arg) {
+    (void)arg;
+    _LOGW("[M] OTA success: reboot in 1s");
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    esp_restart();
+}
+
+static esp_err_t otaUploadHandler(httpd_req_t* req) {
+    const esp_partition_t* updatePartition = selectOtaTargetPartition();
+    if (updatePartition == nullptr) {
+        _LOGE("[M] OTA failed: no update partition available (check partition table and flash size)");
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_sendstr(req, "NO_UPDATE_PARTITION");
+        return ESP_FAIL;
+    }
+
+    esp_ota_handle_t otaHandle = 0;
+    esp_err_t err = esp_ota_begin(updatePartition, OTA_SIZE_UNKNOWN, &otaHandle);
+    if (err != ESP_OK) {
+        _LOGE("[M] OTA begin failed: 0x%02X", err);
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_sendstr(req, "OTA_BEGIN_FAILED");
+        return ESP_FAIL;
+    }
+
+    _LOGI("[M] OTA upload started: size=%d target=%s", req->content_len, updatePartition->label);
+
+    int remaining = req->content_len;
+    static uint8_t otaBuffer[1024];
+    while (remaining > 0) {
+        const int toRead = remaining > static_cast<int>(sizeof(otaBuffer)) ? static_cast<int>(sizeof(otaBuffer)) : remaining;
+        const int received = httpd_req_recv(req, reinterpret_cast<char*>(otaBuffer), toRead);
+        if (received <= 0) {
+            if (received == HTTPD_SOCK_ERR_TIMEOUT) {
+                continue;
+            }
+            _LOGE("[M] OTA recv failed: %d", received);
+            esp_ota_abort(otaHandle);
+            httpd_resp_set_status(req, "500 Internal Server Error");
+            httpd_resp_sendstr(req, "OTA_RECV_FAILED");
+            return ESP_FAIL;
+        }
+
+        err = esp_ota_write(otaHandle, otaBuffer, received);
+        if (err != ESP_OK) {
+            _LOGE("[M] OTA write failed: 0x%02X", err);
+            esp_ota_abort(otaHandle);
+            httpd_resp_set_status(req, "500 Internal Server Error");
+            httpd_resp_sendstr(req, "OTA_WRITE_FAILED");
+            return ESP_FAIL;
+        }
+        remaining -= received;
+    }
+
+    err = esp_ota_end(otaHandle);
+    if (err != ESP_OK) {
+        _LOGE("[M] OTA end failed: 0x%02X", err);
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_sendstr(req, "OTA_END_FAILED");
+        return ESP_FAIL;
+    }
+
+    err = esp_ota_set_boot_partition(updatePartition);
+    if (err != ESP_OK) {
+        _LOGE("[M] OTA set boot partition failed: 0x%02X", err);
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        httpd_resp_sendstr(req, "OTA_SET_BOOT_FAILED");
+        return ESP_FAIL;
+    }
+
+    _LOGI("[M] OTA upload complete: next boot partition=%s", updatePartition->label);
+    httpd_resp_set_status(req, "200 OK");
+    httpd_resp_sendstr(req, "OK");
+    xTaskCreate(otaRebootTask, "ota_reboot", 2048, nullptr, 5, nullptr);
+    return ESP_OK;
+}
+
+static void startOtaHttpServer() {
+    if (otaServer != nullptr) {
+        return;
+    }
+
+    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    config.server_port = 80;
+
+    esp_err_t err = httpd_start(&otaServer, &config);
+    if (err != ESP_OK) {
+        _LOGE("[M] OTA server start failed: 0x%02X", err);
+        otaServer = nullptr;
+        return;
+    }
+
+    httpd_uri_t uploadUri = {};
+    uploadUri.uri = "/ota/upload";
+    uploadUri.method = HTTP_POST;
+    uploadUri.handler = otaUploadHandler;
+    uploadUri.user_ctx = nullptr;
+
+    err = httpd_register_uri_handler(otaServer, &uploadUri);
+    if (err != ESP_OK) {
+        _LOGE("[M] OTA URI register failed: 0x%02X", err);
+        httpd_stop(otaServer);
+        otaServer = nullptr;
+        return;
+    }
+
+    _LOGI("[M] OTA HTTP server ready on port %d endpoint %s", config.server_port, uploadUri.uri);
 }
 
 // -----------------------------------------------------------------------------
-// Sezione 3: Gestione del display e LVGL
+// Sezione 1: Logica generale con FreeRTOS
 // -----------------------------------------------------------------------------
 
 static lv_obj_t* display_label = nullptr;
@@ -111,16 +233,150 @@ static const FontDefinition fontDefinitions[] = {
 
 static const uint8_t kFontCount = sizeof(fontDefinitions) / sizeof(fontDefinitions[0]);
 
-/**
- * isNumericOnly
- * Verifica se una stringa contiene solo caratteri numerici, ignorando CR, LF e spazi.
- * @param text Stringa in ingresso.
- * @return true se la stringa è composta esclusivamente da cifre numeriche, false altrimenti.
- */
-bool isNumericOnly(const String& text) {
-    for (size_t i = 0; i < text.length(); ++i) {
-        char c = text.charAt(i);
-        if (c == '\r' || c == '\n' || c == ' ') continue;
+static void configureOutputPin(gpio_num_t pin) {
+    gpio_config_t io_conf = {};
+    io_conf.intr_type = GPIO_INTR_DISABLE;
+    io_conf.mode = GPIO_MODE_OUTPUT;
+    io_conf.pin_bit_mask = 1ULL << pin;
+    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+    gpio_config(&io_conf);
+}
+
+static void configureInputPin(gpio_num_t pin) {
+    gpio_config_t io_conf = {};
+    io_conf.intr_type = GPIO_INTR_DISABLE;
+    io_conf.mode = GPIO_MODE_INPUT;
+    io_conf.pin_bit_mask = 1ULL << pin;
+    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
+    gpio_config(&io_conf);
+}
+
+static void wifiEventHandler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+        _LOGI("WiFi station started, connecting to %s", WIFI_SSID);
+        esp_wifi_connect();
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        wifi_event_sta_disconnected_t* event = static_cast<wifi_event_sta_disconnected_t*>(event_data);
+        _LOGW("WiFi disconnected, reason=%d. Reconnecting...", event->reason);
+        esp_wifi_connect();
+    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        ip_event_got_ip_t* event = static_cast<ip_event_got_ip_t*>(event_data);
+        char ipstr[16];
+        esp_ip4addr_ntoa(&event->ip_info.ip, ipstr, sizeof(ipstr));
+        _LOGI("WiFi connected, IP=%s", ipstr);
+        startOtaHttpServer();
+    }
+}
+
+static bool initNvsStorage() {
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        _LOGW("[M] NVS init issue (0x%02X), erasing NVS partition", err);
+        err = nvs_flash_erase();
+        if (err != ESP_OK) {
+            _LOGE("[M] nvs_flash_erase failed: 0x%02X", err);
+            return false;
+        }
+        err = nvs_flash_init();
+    }
+
+    if (err != ESP_OK) {
+        _LOGE("[M] nvs_flash_init failed: 0x%02X", err);
+        return false;
+    }
+
+    return true;
+}
+
+static void initWifi() {
+    if (!initNvsStorage()) {
+        _LOGE("[M] WiFi init aborted: NVS unavailable");
+        return;
+    }
+
+    esp_netif_init();
+    esp_event_loop_create_default();
+    esp_netif_create_default_wifi_sta();
+
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    esp_err_t err = esp_wifi_init(&cfg);
+    if (err != ESP_OK) {
+        _LOGE("esp_wifi_init failed: 0x%02X", err);
+        return;
+    }
+
+    err = esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifiEventHandler, nullptr, nullptr);
+    if (err != ESP_OK) {
+        _LOGE("WiFi event handler register failed: 0x%02X", err);
+        return;
+    }
+
+    err = esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifiEventHandler, nullptr, nullptr);
+    if (err != ESP_OK) {
+        _LOGE("IP event handler register failed: 0x%02X", err);
+        return;
+    }
+
+    wifi_config_t wifi_config = {};
+    std::memcpy(wifi_config.sta.ssid, WIFI_SSID, sizeof(wifi_config.sta.ssid));
+    std::memcpy(wifi_config.sta.password, WIFI_PASSWORD, sizeof(wifi_config.sta.password));
+    wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+    wifi_config.sta.pmf_cfg.capable = true;
+    wifi_config.sta.pmf_cfg.required = false;
+
+    err = esp_wifi_set_mode(WIFI_MODE_STA);
+    if (err != ESP_OK) {
+        _LOGE("esp_wifi_set_mode failed: 0x%02X", err);
+        return;
+    }
+
+    err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+    if (err != ESP_OK) {
+        _LOGE("esp_wifi_set_config failed: 0x%02X", err);
+        return;
+    }
+
+    err = esp_wifi_start();
+    if (err != ESP_OK) {
+        _LOGE("esp_wifi_start failed: 0x%02X", err);
+    } else {
+        _LOGI("WiFi initialization complete, waiting for connection...");
+    }
+}
+
+static void initUart(uart_port_t uart_num, int baud_rate, int tx_pin, int rx_pin) {
+    _LOGI("Initializing UART %d @ %d baud TX=%d RX=%d", static_cast<int>(uart_num), baud_rate, tx_pin, rx_pin);
+    uart_config_t uart_config = {};
+    uart_config.baud_rate = baud_rate;
+    uart_config.data_bits = UART_DATA_8_BITS;
+    uart_config.parity = UART_PARITY_DISABLE;
+    uart_config.stop_bits = UART_STOP_BITS_1;
+    uart_config.flow_ctrl = UART_HW_FLOWCTRL_DISABLE;
+    uart_config.rx_flow_ctrl_thresh = 0;
+    uart_config.source_clk = UART_SCLK_APB;
+    esp_err_t err = uart_param_config(uart_num, &uart_config);
+    if (err != ESP_OK) {
+        _LOGE("uart_param_config failed for UART %d: 0x%02X", static_cast<int>(uart_num), err);
+    }
+    err = uart_set_pin(uart_num, tx_pin, rx_pin, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+    if (err != ESP_OK) {
+        _LOGE("uart_set_pin failed for UART %d: 0x%02X", static_cast<int>(uart_num), err);
+    }
+    err = uart_driver_install(uart_num, 1024, 0, 0, nullptr, 0);
+    if (err != ESP_OK) {
+        _LOGE("uart_driver_install failed for UART %d: 0x%02X", static_cast<int>(uart_num), err);
+    } else {
+        _LOGI("UART %d initialized successfully", static_cast<int>(uart_num));
+    }
+}
+
+static bool isNumericOnly(const std::string& text) {
+    for (char c : text) {
+        if (c == '\r' || c == '\n' || c == ' ') {
+            continue;
+        }
         if (c < '0' || c > '9') {
             return false;
         }
@@ -128,47 +384,30 @@ bool isNumericOnly(const String& text) {
     return true;
 }
 
-/**
- * normalizeText
- * Converte CR in LF e tab in spazio per una gestione uniforme del testo.
- * @param text Stringa di input.
- * @return Stringa normalizzata.
- */
-String normalizeText(const String& text) {
-    String normalized;
-    normalized.reserve(text.length());
-    for (size_t i = 0; i < text.length(); ++i) {
-        char c = text.charAt(i);
+static std::string normalizeText(const std::string& text) {
+    std::string normalized;
+    normalized.reserve(text.size());
+    for (char c : text) {
         if (c == '\r') {
-            normalized += '\n';
+            normalized.push_back('\n');
         } else if (c == '\t') {
-            normalized += ' ';
+            normalized.push_back(' ');
         } else {
-            normalized += c;
+            normalized.push_back(c);
         }
     }
     return normalized;
 }
 
-/**
- * wrapText
- * Avvolge il testo in righe in base alla larghezza massima permessa dal font.
- * - considera i caratteri di fine riga '\n'
- * - tiene conto del limite massimo di caratteri per riga del font
- * - tronca le parole che eccedono la larghezza massima
- * @param text Testo normalizzato da avvolgere.
- * @param fontDef Definizione del font contenente maxCharsPerLine.
- * @return Vettore di righe formattate.
- */
-std::vector<String> wrapText(const String& text, const FontDefinition& fontDef) {
-    std::vector<String> lines;
-    String currentLine;
-    String token;
+static std::vector<std::string> wrapText(const std::string& text, const FontDefinition& fontDef) {
+    std::vector<std::string> lines;
+    std::string currentLine;
+    std::string token;
     for (size_t i = 0; i <= text.length(); ++i) {
-        char c = i < text.length() ? text.charAt(i) : ' ';
+        char c = i < text.length() ? text[i] : ' ';
         if (c == '\n') {
-            if (token.length()) {
-                if (currentLine.length()) {
+            if (!token.empty()) {
+                if (!currentLine.empty()) {
                     if (currentLine.length() + 1 + token.length() <= fontDef.maxCharsPerLine) {
                         currentLine += ' ';
                         currentLine += token;
@@ -179,13 +418,13 @@ std::vector<String> wrapText(const String& text, const FontDefinition& fontDef) 
                 } else {
                     currentLine = token;
                 }
-                token = "";
+                token.clear();
             }
             lines.push_back(currentLine);
-            currentLine = "";
+            currentLine.clear();
         } else if (c == ' ' || i == text.length()) {
-            if (token.length()) {
-                if (currentLine.length()) {
+            if (!token.empty()) {
+                if (!currentLine.empty()) {
                     if (currentLine.length() + 1 + token.length() <= fontDef.maxCharsPerLine) {
                         currentLine += ' ';
                         currentLine += token;
@@ -196,84 +435,64 @@ std::vector<String> wrapText(const String& text, const FontDefinition& fontDef) 
                 } else {
                     currentLine = token;
                 }
-                token = "";
+                token.clear();
             }
             if (i == text.length()) {
                 break;
             }
         } else {
-            token += c;
+            token.push_back(c);
             if (token.length() > fontDef.maxCharsPerLine) {
-                if (currentLine.length()) {
+                if (!currentLine.empty()) {
                     lines.push_back(currentLine);
-                    currentLine = "";
+                    currentLine.clear();
                 }
                 while (token.length() > fontDef.maxCharsPerLine) {
-                    lines.push_back(token.substring(0, fontDef.maxCharsPerLine));
-                    token = token.substring(fontDef.maxCharsPerLine);
+                    lines.push_back(token.substr(0, fontDef.maxCharsPerLine));
+                    token.erase(0, fontDef.maxCharsPerLine);
                 }
-                if (token.length()) {
+                if (!token.empty()) {
                     currentLine = token;
-                    token = "";
+                    token.clear();
                 }
             }
         }
         if (currentLine.length() > fontDef.maxCharsPerLine) {
-            lines.push_back(currentLine.substring(0, fontDef.maxCharsPerLine));
-            currentLine = currentLine.substring(fontDef.maxCharsPerLine);
+            lines.push_back(currentLine.substr(0, fontDef.maxCharsPerLine));
+            currentLine.erase(0, fontDef.maxCharsPerLine);
         }
     }
-    if (currentLine.length() || lines.empty()) {
+    if (!currentLine.empty() || lines.empty()) {
         lines.push_back(currentLine);
     }
     return lines;
 }
 
-/**
- * joinLines
- * Costruisce una singola stringa unendo le righe separate da '\n'.
- * @param lines Vettore di righe di testo.
- * @return Stringa concatenata con line feed.
- */
-String joinLines(const std::vector<String>& lines) {
-    String result;
+static std::string joinLines(const std::vector<std::string>& lines) {
+    std::string result;
     for (size_t i = 0; i < lines.size(); ++i) {
         result += lines[i];
         if (i + 1 < lines.size()) {
-            result += '\n';
+            result.push_back('\n');
         }
     }
     return result;
 }
 
-/**
- * fitsInFont
- * Verifica se una stringa formattata con un font specifico rientra nel numero massimo di righe disponibili.
- * @param text Testo normalizzato.
- * @param fontDef Definizione del font.
- * @return true se il testo rientra, false altrimenti.
- */
-bool fitsInFont(const String& text, const FontDefinition& fontDef) {
+static bool fitsInFont(const std::string& text, const FontDefinition& fontDef) {
     auto lines = wrapText(text, fontDef);
     return lines.size() <= fontDef.maxLines;
 }
 
-/**
- * truncateText
- * Tronca il testo se supera le righe disponibili e aggiunge " ..." all’ultima riga.
- * @param text Testo normalizzato.
- * @param fontDef Definizione del font.
- * @return Testo eventualmente troncato.
- */
-String truncateText(const String& text, const FontDefinition& fontDef) {
+static std::string truncateText(const std::string& text, const FontDefinition& fontDef) {
     auto lines = wrapText(text, fontDef);
     if (lines.size() <= fontDef.maxLines) {
         return joinLines(lines);
     }
     lines.resize(fontDef.maxLines);
-    String& last = lines.back();
+    std::string& last = lines.back();
     if (last.length() > 4) {
-        last = last.substring(0, last.length() - 4);
+        last = last.substr(0, last.length() - 4);
         last += " ...";
     } else {
         last = " ...";
@@ -281,14 +500,8 @@ String truncateText(const String& text, const FontDefinition& fontDef) {
     return joinLines(lines);
 }
 
-/**
- * selectFontIndex
- * Seleziona l’indice del font più adatto in base al contenuto del testo e alla lunghezza.
- * @param text Testo originale.
- * @return Indice del font selezionato dall’array fontDefinitions.
- */
-uint8_t selectFontIndex(const String& text) {
-    const String normalized = normalizeText(text);
+static uint8_t selectFontIndex(const std::string& text) {
+    const std::string normalized = normalizeText(text);
     const bool numeric = isNumericOnly(normalized);
     std::vector<uint8_t> candidates;
     if (numeric) {
@@ -316,129 +529,84 @@ static uint8_t resolveExtendedFontIndex(uint8_t fontNumber) {
     }
 }
 
-/**
- * clearDisplay
- * Cancella completamente il display e resetta l’etichetta LVGL se presente.
- * Non prende parametri e non restituisce valori.
- */
 void clearDisplay() {
-    epd_display.setFullWindow();
-    epd_display.fillScreen(GxEPD_WHITE);
-    epd_display.display(false);
     if (display_label) {
         lv_label_set_text(display_label, "");
         lv_obj_align(display_label, LV_ALIGN_CENTER, 0, 0);
     }
 }
 
-/**
- * displayText
- * Gestisce la normalizzazione, selezione del font e la visualizzazione del testo su LVGL.
- * @param raw_text Testo ricevuto in input.
- * Non restituisce valori.
- */
-void displayText(const String& raw_text) {
-    const String normalized = normalizeText(raw_text);
+void displayText(const std::string& raw_text) {
+    const std::string normalized = normalizeText(raw_text);
     const uint8_t fontIndex = selectFontIndex(normalized);
     const auto& fontDef = fontDefinitions[fontIndex];
-    String output = fitsInFont(normalized, fontDef) ? joinLines(wrapText(normalized, fontDef)) : truncateText(normalized, fontDef);
+    std::string output = fitsInFont(normalized, fontDef) ? joinLines(wrapText(normalized, fontDef)) : truncateText(normalized, fontDef);
 
     lv_obj_set_style_text_font(display_label, fontDef.font, LV_PART_MAIN);
     lv_label_set_text(display_label, output.c_str());
     lv_obj_align(display_label, LV_ALIGN_CENTER, 0, 0);
-    Serial.printf("Display text using %s\n", fontDef.name);
+    ESP_LOGI(TAG, "Display text using %s", fontDef.name);
 }
 
-void displayText(const String& raw_text, uint8_t fontNumber, uint8_t x, uint8_t y) {
-    const String normalized = normalizeText(raw_text);
+void displayText(const std::string& raw_text, uint8_t fontNumber, uint8_t x, uint8_t y) {
+    const std::string normalized = normalizeText(raw_text);
     const uint8_t fontIndex = resolveExtendedFontIndex(fontNumber);
     const auto& fontDef = fontDefinitions[fontIndex];
-    String output = normalized;
+    const std::string output = normalized;
     const int32_t width = static_cast<int32_t>(EPD_WIDTH) - x;
     lv_obj_set_style_text_font(display_label, fontDef.font, LV_PART_MAIN);
     lv_label_set_text(display_label, output.c_str());
     lv_obj_set_width(display_label, width > 0 ? width : 0);
     lv_obj_set_pos(display_label, x, y);
-    Serial.printf("[DEBUG] Extended display text font#%u pos=(%u,%u) len=%u\n", fontNumber, x, y, output.length());
+    ESP_LOGI(TAG, "Extended display text font#%u pos=(%u,%u) len=%u", fontNumber, x, y, static_cast<unsigned>(output.length()));
 }
 
-/**
- * setupDisplay
- * Inizializza il controller EPD, il bus SPI e l’hardware di reset del display.
- * Non prende parametri e non restituisce valori.
- */
 void setupDisplay() {
-    pinMode(PIN_EPD_BUSY_CFG, INPUT_PULLUP);
-    pinMode(PIN_EPD_RST_CFG, OUTPUT);
-    digitalWrite(PIN_EPD_RST_CFG, HIGH);
-    delay(10);
-    digitalWrite(PIN_EPD_RST_CFG, LOW);
-    delay(10);
-    digitalWrite(PIN_EPD_RST_CFG, HIGH);
-    delay(10);
-
-    SPI.begin(PIN_SPI_SCK_CFG, PIN_SPI_MISO_CFG, PIN_SPI_MOSI_CFG, PIN_EPD_CS_CFG);
-    epd_display.init(115200);
-    epd_display.epd2.setBusyCallback([](const void*) {});
-    epd_display.setRotation(EPD_ROTATION);
-    epd_display.setFullWindow();
-    epd_display.fillScreen(GxEPD_WHITE);
-    epd_display.display(false);
+    _LOGW("[M] Driver display hardware disabilitato: backend LVGL software-only");
 }
 
-/**
- * epd_flush_cb
- * Callback LVGL per inviare una porzione di framebuffer al display e aggiornare l’EPD.
- * @param drv Driver di display LVGL.
- * @param area Area del framebuffer da aggiornare.
- * @param color_p Buffer dei pixel.
- */
 static void epd_flush_cb(lv_disp_drv_t* drv, const lv_area_t* area, lv_color_t* color_p) {
-    lv_area_t flush_area = *area;
-    if (flush_area.x1 < 0) flush_area.x1 = 0;
-    if (flush_area.y1 < 0) flush_area.y1 = 0;
-    if (flush_area.x2 >= static_cast<int32_t>(EPD_WIDTH)) flush_area.x2 = EPD_WIDTH - 1;
-    if (flush_area.y2 >= static_cast<int32_t>(EPD_HEIGHT)) flush_area.y2 = EPD_HEIGHT - 1;
-    const uint16_t width = static_cast<uint16_t>(flush_area.x2 - flush_area.x1 + 1);
-    const uint16_t height = static_cast<uint16_t>(flush_area.y2 - flush_area.y1 + 1);
-    epd_display.setPartialWindow(flush_area.x1, flush_area.y1, width, height);
-    for (uint16_t y = 0; y < height; ++y) {
-        for (uint16_t x = 0; x < width; ++x) {
-            const uint32_t index = static_cast<uint32_t>(y) * width + x;
-            const lv_color_t color = color_p[index];
-            const uint16_t epdColor = (color.full == lv_color_white().full) ? GxEPD_WHITE : GxEPD_BLACK;
-            epd_display.drawPixel(flush_area.x1 + x, flush_area.y1 + y, epdColor);
-        }
-    }
-    epd_display.display(false);
+    (void)area;
+    (void)color_p;
     lv_disp_flush_ready(drv);
 }
 
-/**
- * setupLvgl
- * Inizializza la libreria LVGL e la configurazione del buffer di disegno.
- * Non prende parametri e non restituisce valori.
- */
 void setupLvgl() {
     lv_init();
-    static lv_color_t lv_framebuffer[EPD_WIDTH * 40];
-    static lv_disp_draw_buf_t draw_buf;
-    static lv_disp_drv_t disp_drv;
-    lv_disp_draw_buf_init(&draw_buf, lv_framebuffer, nullptr, EPD_WIDTH * 40);
-    lv_disp_drv_init(&disp_drv);
-    disp_drv.hor_res = EPD_WIDTH;
-    disp_drv.ver_res = EPD_HEIGHT;
-    disp_drv.flush_cb = epd_flush_cb;
-    disp_drv.draw_buf = &draw_buf;
-    disp_drv.full_refresh = 0;
-    lv_disp_drv_register(&disp_drv);
+    static lv_color_t* lv_framebuffer = nullptr;
+    static lv_disp_draw_buf_t* draw_buf = nullptr;
+    static lv_disp_drv_t* disp_drv = nullptr;
+    if (lv_framebuffer == nullptr) {
+        lv_framebuffer = new lv_color_t[EPD_WIDTH * 40];
+        if (lv_framebuffer == nullptr) {
+            _LOGE("Failed to allocate LVGL framebuffer");
+            return;
+        }
+    }
+    if (draw_buf == nullptr) {
+        draw_buf = new lv_disp_draw_buf_t;
+        if (draw_buf == nullptr) {
+            _LOGE("Failed to allocate LVGL draw buffer object");
+            return;
+        }
+    }
+    if (disp_drv == nullptr) {
+        disp_drv = new lv_disp_drv_t;
+        if (disp_drv == nullptr) {
+            _LOGE("Failed to allocate LVGL display driver object");
+            return;
+        }
+    }
+    lv_disp_draw_buf_init(draw_buf, lv_framebuffer, nullptr, EPD_WIDTH * 40);
+    lv_disp_drv_init(disp_drv);
+    disp_drv->hor_res = EPD_WIDTH;
+    disp_drv->ver_res = EPD_HEIGHT;
+    disp_drv->flush_cb = epd_flush_cb;
+    disp_drv->draw_buf = draw_buf;
+    disp_drv->full_refresh = 0;
+    lv_disp_drv_register(disp_drv);
 }
 
-/**
- * buildUi
- * Costruisce l’interfaccia LVGL di base con un'etichetta centrale per il testo.
- * Non prende parametri e non restituisce valori.
- */
 void buildUi() {
     lv_obj_t* screen = lv_scr_act();
     lv_obj_set_style_bg_color(screen, lv_color_white(), LV_PART_MAIN);
@@ -454,4 +622,40 @@ void buildUi() {
     lv_label_set_text(display_label, "Ready");
     lv_obj_align(display_label, LV_ALIGN_CENTER, 0, 0);
 }
+
+extern "C" void app_main() {
+    ESP_LOGI(TAG, "Starting EPaperQr FreeRTOS application");
+    initWifi();
+    initUart(UART_MASTER, 9800, PIN_TX_ESP_CFG, PIN_RX_ESP_CFG);
+#if defined(SCANNER_CONTROL_USE_SERIAL)
+    initUart(UART_SCANNER, 9600, PIN_SCANNER_TX_CFG, PIN_SCANNER_RX_CFG);
+#endif
+    setupScannerPins();
+    setupRgbLed();
+    setupDisplay();
+    setupLvgl();
+    buildUi();
+
+    uint64_t lastLoopLog = esp_timer_get_time() / 1000;
+    while (true) {
+        const uint64_t now = esp_timer_get_time() / 1000;
+        if (now - lastLoopLog > 10000) {
+            ESP_LOGI(TAG, "Main loop heartbeat");
+            lastLoopLog = now;
+        }
+
+        handleMasterSerial(UART_MASTER
+#if defined(SCANNER_CONTROL_USE_SERIAL)
+            , UART_SCANNER
+#endif
+        );
+#if defined(SCANNER_CONTROL_USE_SERIAL)
+        forwardScannerData(UART_SCANNER, UART_MASTER);
+#endif
+        lv_timer_handler();
+        vTaskDelay(pdMS_TO_TICKS(5));
+    }
+}
+
+
 
