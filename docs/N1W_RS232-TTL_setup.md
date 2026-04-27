@@ -95,3 +95,23 @@ Per usare l’N1-W con interfaccia RS232-TTL:
 5. mantieni il livello 3.3 V su TTL232.
 
 Questa impostazione garantisce compatibilità con la modalità seriale descritta nel manuale N1-W.
+
+## 9. Verifica operativa RS232-TTL via comando query
+Per verificare che la porta seriale tra ESP32-S2 e N1-W sia configurata correttamente, il firmware esegue un self-test in avvio (modalita seriale scanner).
+
+Comandi di prova inviati su UART scanner:
+
+- `SOH @QRYSYS EOT` (byte: `01 40 51 52 59 53 59 53 04`)
+- `SOH QRYSYS EOT` (byte: `01 51 52 59 53 59 53 04`)
+
+Dove:
+
+- `SOH` = `0x01`
+- `EOT` = `0x04`
+
+Nei log sono evidenziati:
+
+- `SCN TX ...` con dump esadecimale del frame inviato.
+- `SCN RX ...` con dump esadecimale e ASCII della risposta ricevuta.
+
+Se non arriva risposta, il log mostra `SCN RX ... no response`: in quel caso verificare cablaggio TX/RX incrociato, massa comune, modalita interfaccia scanner e baud `9600 8N1`.

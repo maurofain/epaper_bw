@@ -49,10 +49,10 @@
 #define PIN_TX_ESP 39
 #endif
 #ifndef PIN_QR_BCRES
-#define PIN_QR_BCRES 42
+#define PIN_QR_BCRES 45
 #endif
 #ifndef PIN_QR_BCTRIG
-#define PIN_QR_BCTRIG 45
+#define PIN_QR_BCTRIG 42
 #endif
 
 constexpr int8_t PIN_BOOT_BUTTON_CFG = PIN_BOOT_BUTTON;

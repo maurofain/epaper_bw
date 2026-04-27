@@ -9,6 +9,7 @@
 #include <esp_ota_ops.h>
 #include <esp_partition.h>
 #include <esp_system.h>
+#include <esp_rom_sys.h>
 #include <nvs_flash.h>
 #include <cstring>
 #include <freertos/FreeRTOS.h>
@@ -16,13 +17,19 @@
 #include <string>
 #include <vector>
 
+#ifndef ENABLE_DISPLAY_LVGL
+#define ENABLE_DISPLAY_LVGL 0
+#endif
+
 #include "pin_config.h"
 #include "display.h"
 #include "led_control.h"
 #include "scanner_control.h"
 #include "master_protocol.h"
+#if ENABLE_DISPLAY_LVGL
 #include "lv_conf.h"
 #include <lvgl.h>
+#endif
 
 #define LOG_TAG "EPaperQr"
 #define _LOGI(...) ESP_LOGI(LOG_TAG, __VA_ARGS__)
@@ -32,6 +39,26 @@
 
 #ifndef DISPLAY_UPDATE_INTERVAL_SEC
 #define DISPLAY_UPDATE_INTERVAL_SEC 15
+#endif
+
+#ifndef SCANNER_SERIAL_SELF_TEST_ENABLE
+#define SCANNER_SERIAL_SELF_TEST_ENABLE 1
+#endif
+
+#ifndef SCANNER_TX_SQUARE_WAVE_ENABLE
+#define SCANNER_TX_SQUARE_WAVE_ENABLE 0
+#endif
+
+#ifndef SCANNER_UART_TX_DIAG_BURST_ENABLE
+#define SCANNER_UART_TX_DIAG_BURST_ENABLE 0
+#endif
+
+#ifndef SCANNER_UART_TX_DIAG_BURST_INTERVAL_MS
+#define SCANNER_UART_TX_DIAG_BURST_INTERVAL_MS 20
+#endif
+
+#ifndef SCANNER_TX_SQUARE_WAVE_FREQ_HZ
+#define SCANNER_TX_SQUARE_WAVE_FREQ_HZ 10000
 #endif
 
 #define WIFI_SSID "FWAP02"
@@ -46,11 +73,89 @@ constexpr uint16_t EPD_HEIGHT = 200;
 #endif
 
 static const char* TAG = "EPaperQr";
+static constexpr const char* kAppLastChangeDescription = "Scanner TTL 9600 in listen-only: log frame RX testo+HEX con terminatore CR (0x0D), test EILSCN salvato";
+static constexpr const char* kAppLastChangeTimestamp = __TIMESTAMP__;
 static const uart_port_t UART_MASTER = UART_NUM_1;
 #if defined(SCANNER_CONTROL_USE_SERIAL)
 static const uart_port_t UART_SCANNER = UART_NUM_0;
 #endif
 static httpd_handle_t otaServer = nullptr;
+
+#if defined(SCANNER_CONTROL_USE_SERIAL) && SCANNER_TX_SQUARE_WAVE_ENABLE
+static esp_timer_handle_t scannerTxWaveTimer = nullptr;
+static bool scannerTxWaveLevel = false;
+
+static void scannerTxWaveCallback(void* arg) {
+    (void)arg;
+    scannerTxWaveLevel = !scannerTxWaveLevel;
+    gpio_set_level(static_cast<gpio_num_t>(PIN_SCANNER_TX_CFG), scannerTxWaveLevel ? 1 : 0);
+}
+
+static void startScannerTxSquareWave() {
+    if (scannerTxWaveTimer != nullptr) {
+        return;
+    }
+
+    gpio_config_t ioConf = {};
+    ioConf.intr_type = GPIO_INTR_DISABLE;
+    ioConf.mode = GPIO_MODE_OUTPUT;
+    ioConf.pin_bit_mask = 1ULL << static_cast<gpio_num_t>(PIN_SCANNER_TX_CFG);
+    ioConf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    ioConf.pull_up_en = GPIO_PULLUP_DISABLE;
+    esp_err_t err = gpio_config(&ioConf);
+    if (err != ESP_OK) {
+        _LOGE("[M] scanner TX wave gpio_config failed: 0x%02X", err);
+        return;
+    }
+
+    const esp_timer_create_args_t timerArgs = {
+        .callback = &scannerTxWaveCallback,
+        .arg = nullptr,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = "scn_tx_wave",
+        .skip_unhandled_events = false,
+    };
+    err = esp_timer_create(&timerArgs, &scannerTxWaveTimer);
+    if (err != ESP_OK) {
+        _LOGE("[M] scanner TX wave timer create failed: 0x%02X", err);
+        scannerTxWaveTimer = nullptr;
+        return;
+    }
+
+    const int64_t halfPeriodUs = 1000000LL / (2LL * SCANNER_TX_SQUARE_WAVE_FREQ_HZ);
+    err = esp_timer_start_periodic(scannerTxWaveTimer, halfPeriodUs > 0 ? halfPeriodUs : 1);
+    if (err != ESP_OK) {
+        _LOGE("[M] scanner TX wave start failed: 0x%02X", err);
+        esp_timer_delete(scannerTxWaveTimer);
+        scannerTxWaveTimer = nullptr;
+        return;
+    }
+
+    _LOGW("[M] scanner TX wave active on pin=%d freq=%dHz", PIN_SCANNER_TX_CFG, SCANNER_TX_SQUARE_WAVE_FREQ_HZ);
+}
+#endif
+
+static const char* resetReasonToString(esp_reset_reason_t reason) {
+    switch (reason) {
+        case ESP_RST_UNKNOWN: return "UNKNOWN";
+        case ESP_RST_POWERON: return "POWERON";
+        case ESP_RST_EXT: return "EXT";
+        case ESP_RST_SW: return "SW";
+        case ESP_RST_PANIC: return "PANIC";
+        case ESP_RST_INT_WDT: return "INT_WDT";
+        case ESP_RST_TASK_WDT: return "TASK_WDT";
+        case ESP_RST_WDT: return "WDT";
+        case ESP_RST_DEEPSLEEP: return "DEEPSLEEP";
+        case ESP_RST_BROWNOUT: return "BROWNOUT";
+        case ESP_RST_SDIO: return "SDIO";
+        case ESP_RST_USB: return "USB";
+        case ESP_RST_JTAG: return "JTAG";
+        case ESP_RST_EFUSE: return "EFUSE";
+        case ESP_RST_PWR_GLITCH: return "PWR_GLITCH";
+        case ESP_RST_CPU_LOCKUP: return "CPU_LOCKUP";
+        default: return "UNMAPPED";
+    }
+}
 
 static const esp_partition_t* selectOtaTargetPartition() {
     const esp_partition_t* running = esp_ota_get_running_partition();
@@ -99,6 +204,28 @@ static const esp_partition_t* selectOtaTargetPartition() {
     }
     return fallback;
 }
+
+#if defined(SCANNER_CONTROL_USE_SERIAL) && SCANNER_UART_TX_DIAG_BURST_ENABLE
+static void runScannerUartTxBurstDiagnostic(uart_port_t scannerPort) {
+    static const uint8_t kPattern[] = {0x55, 0xAA, 0x55, 0xAA, 0x0D, 0x0A};
+    ESP_LOGW(TAG, "[M] SCN TX diag burst attivo: uart=%d tx_pin=%d interval=%dms pattern_len=%u",
+             static_cast<int>(scannerPort),
+             PIN_SCANNER_TX_CFG,
+             SCANNER_UART_TX_DIAG_BURST_INTERVAL_MS,
+             static_cast<unsigned>(sizeof(kPattern)));
+
+    while (true) {
+        const int written = uart_write_bytes(scannerPort, reinterpret_cast<const char*>(kPattern), sizeof(kPattern));
+        if (written != static_cast<int>(sizeof(kPattern))) {
+            ESP_LOGW(TAG, "[M] SCN TX diag burst write parziale=%d expected=%u",
+                     written,
+                     static_cast<unsigned>(sizeof(kPattern)));
+        }
+        uart_wait_tx_done(scannerPort, pdMS_TO_TICKS(20));
+        vTaskDelay(pdMS_TO_TICKS(SCANNER_UART_TX_DIAG_BURST_INTERVAL_MS));
+    }
+}
+#endif
 
 static void otaRebootTask(void* arg) {
     (void)arg;
@@ -213,6 +340,7 @@ static void startOtaHttpServer() {
 // Sezione 1: Logica generale con FreeRTOS
 // -----------------------------------------------------------------------------
 
+#if ENABLE_DISPLAY_LVGL
 static lv_obj_t* display_label = nullptr;
 
 struct FontDefinition {
@@ -252,6 +380,8 @@ static void configureInputPin(gpio_num_t pin) {
     io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
     gpio_config(&io_conf);
 }
+
+#endif
 
 static void wifiEventHandler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
@@ -371,6 +501,8 @@ static void initUart(uart_port_t uart_num, int baud_rate, int tx_pin, int rx_pin
         _LOGI("UART %d initialized successfully", static_cast<int>(uart_num));
     }
 }
+
+#if ENABLE_DISPLAY_LVGL
 
 static bool isNumericOnly(const std::string& text) {
     for (char c : text) {
@@ -623,18 +755,85 @@ void buildUi() {
     lv_obj_align(display_label, LV_ALIGN_CENTER, 0, 0);
 }
 
-extern "C" void app_main() {
-    ESP_LOGI(TAG, "Starting EPaperQr FreeRTOS application");
-    initWifi();
-    initUart(UART_MASTER, 9800, PIN_TX_ESP_CFG, PIN_RX_ESP_CFG);
-#if defined(SCANNER_CONTROL_USE_SERIAL)
-    initUart(UART_SCANNER, 9600, PIN_SCANNER_TX_CFG, PIN_SCANNER_RX_CFG);
+#else
+
+void clearDisplay() {}
+
+void displayText(const std::string& raw_text) {
+    (void)raw_text;
+}
+
+void displayText(const std::string& raw_text, uint8_t fontNumber, uint8_t x, uint8_t y) {
+    (void)raw_text;
+    (void)fontNumber;
+    (void)x;
+    (void)y;
+}
+
+void setupDisplay() {
+    _LOGW("[M] Display/LVGL disabilitato da ENABLE_DISPLAY_LVGL");
+}
+
+void setupLvgl() {
+    _LOGW("[M] setupLvgl skipped: ENABLE_DISPLAY_LVGL=0");
+}
+
+void buildUi() {
+    _LOGW("[M] buildUi skipped: ENABLE_DISPLAY_LVGL=0");
+}
+
 #endif
+
+extern "C" void app_main() {
+    const esp_reset_reason_t resetReason = esp_reset_reason();
+    esp_rom_printf("\n[M] app_main entry, reset_reason=%d (%s)\n", static_cast<int>(resetReason), resetReasonToString(resetReason));
+    ESP_LOGI(TAG, "[M] Last change: %s", kAppLastChangeDescription);
+    ESP_LOGI(TAG, "[M] Last change timestamp: %s", kAppLastChangeTimestamp);
+    ESP_LOGI(TAG, "[M] Starting EPaperQr FreeRTOS application");
+    vTaskDelay(pdMS_TO_TICKS(300));
+
+    ESP_LOGI(TAG, "[M] init step: WiFi");
+    initWifi();
+    ESP_LOGI(TAG, "[M] init step: UART master");
+    initUart(UART_MASTER, 9600, PIN_TX_ESP_CFG, PIN_RX_ESP_CFG);
+#if defined(SCANNER_CONTROL_USE_SERIAL)
+    ESP_LOGI(TAG, "[M] init step: UART scanner");
+    initUart(UART_SCANNER, 9600, PIN_SCANNER_TX_CFG, PIN_SCANNER_RX_CFG);
+#if SCANNER_TX_SQUARE_WAVE_ENABLE
+    ESP_LOGI(TAG, "[M] init step: scanner TX square wave");
+    startScannerTxSquareWave();
+#endif
+#endif
+    ESP_LOGI(TAG, "[M] init step: scanner pins");
     setupScannerPins();
+#if defined(SCANNER_CONTROL_USE_SERIAL)
+#if SCANNER_SERIAL_SELF_TEST_ENABLE
+    ESP_LOGI(TAG, "[M] init step: scanner serial self-test");
+#if SCANNER_UART_TX_DIAG_BURST_ENABLE
+    ESP_LOGW(TAG, "[M] init step: scanner TX diagnostic burst mode enabled");
+    runScannerUartTxBurstDiagnostic(UART_SCANNER);
+#else
+    scannerSerialSelfTest(UART_SCANNER);
+#endif
+#else
+    ESP_LOGI(TAG, "[M] init step: scanner serial self-test skipped (SCANNER_SERIAL_SELF_TEST_ENABLE=0)");
+#endif
+#else
+    initializeScanner();
+#endif
+    ESP_LOGI(TAG, "[M] init step: RGB LED");
     setupRgbLed();
+#if ENABLE_DISPLAY_LVGL
+    ESP_LOGI(TAG, "[M] init step: display");
     setupDisplay();
+    ESP_LOGI(TAG, "[M] init step: LVGL");
     setupLvgl();
+    ESP_LOGI(TAG, "[M] init step: UI");
     buildUi();
+#else
+    ESP_LOGI(TAG, "[M] init step: display/LVGL skipped (ENABLE_DISPLAY_LVGL=0)");
+#endif
+    ESP_LOGI(TAG, "[M] init completed");
 
     uint64_t lastLoopLog = esp_timer_get_time() / 1000;
     while (true) {
@@ -652,7 +851,9 @@ extern "C" void app_main() {
 #if defined(SCANNER_CONTROL_USE_SERIAL)
         forwardScannerData(UART_SCANNER, UART_MASTER);
 #endif
+#if ENABLE_DISPLAY_LVGL
         lv_timer_handler();
+#endif
         vTaskDelay(pdMS_TO_TICKS(5));
     }
 }

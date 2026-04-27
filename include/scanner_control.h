@@ -18,6 +18,7 @@ void initializeScanner();
 #if defined(SCANNER_CONTROL_USE_SERIAL)
 void scannerOn(uart_port_t scannerPort);
 void scannerOff(uart_port_t scannerPort);
+void scannerSerialSelfTest(uart_port_t scannerPort);
 #else
 void scannerOn();
 void scannerOff();
