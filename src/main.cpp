@@ -10,15 +10,18 @@
 #include <esp_partition.h>
 #include <esp_system.h>
 #include <esp_rom_sys.h>
+#include <esp_spiffs.h>
 #include <nvs_flash.h>
 #include <cstring>
+#include <dirent.h>
+#include <sys/stat.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <string>
 #include <vector>
 
 #ifndef ENABLE_DISPLAY_LVGL
-#define ENABLE_DISPLAY_LVGL 0
+#define ENABLE_DISPLAY_LVGL 1
 #endif
 
 #include "pin_config.h"
@@ -75,9 +78,11 @@ constexpr uint16_t EPD_HEIGHT = 200;
 static const char* TAG = "EPaperQr";
 static constexpr const char* kAppLastChangeDescription = "Scanner TTL 9600 listen-only: log realtime BYTE in HEX+ASCII senza attesa terminatore";
 static constexpr const char* kAppLastChangeTimestamp = __TIMESTAMP__;
-static const uart_port_t UART_MASTER = UART_NUM_1;
+static const uart_port_t UART_MASTER = UART_NUM_0;
+static bool gMasterUartReady = false;
 #if defined(SCANNER_CONTROL_USE_SERIAL)
-static const uart_port_t UART_SCANNER = UART_NUM_0;
+static const uart_port_t UART_SCANNER = UART_NUM_1;
+static bool gScannerUartReady = false;
 #endif
 static httpd_handle_t otaServer = nullptr;
 
@@ -476,7 +481,7 @@ static void initWifi() {
     }
 }
 
-static void initUart(uart_port_t uart_num, int baud_rate, int tx_pin, int rx_pin) {
+static bool initUart(uart_port_t uart_num, int baud_rate, int tx_pin, int rx_pin) {
     _LOGI("Initializing UART %d @ %d baud TX=%d RX=%d", static_cast<int>(uart_num), baud_rate, tx_pin, rx_pin);
     uart_config_t uart_config = {};
     uart_config.baud_rate = baud_rate;
@@ -489,17 +494,81 @@ static void initUart(uart_port_t uart_num, int baud_rate, int tx_pin, int rx_pin
     esp_err_t err = uart_param_config(uart_num, &uart_config);
     if (err != ESP_OK) {
         _LOGE("uart_param_config failed for UART %d: 0x%02X", static_cast<int>(uart_num), err);
+        return false;
     }
     err = uart_set_pin(uart_num, tx_pin, rx_pin, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
     if (err != ESP_OK) {
         _LOGE("uart_set_pin failed for UART %d: 0x%02X", static_cast<int>(uart_num), err);
+        return false;
     }
     err = uart_driver_install(uart_num, 1024, 0, 0, nullptr, 0);
     if (err != ESP_OK) {
         _LOGE("uart_driver_install failed for UART %d: 0x%02X", static_cast<int>(uart_num), err);
-    } else {
-        _LOGI("UART %d initialized successfully", static_cast<int>(uart_num));
+        return false;
     }
+    _LOGI("UART %d initialized successfully", static_cast<int>(uart_num));
+    return true;
+}
+
+static bool mountSpiffs() {
+    esp_vfs_spiffs_conf_t conf = {
+        .base_path = "/spiffs",
+        .partition_label = "spiffs",
+        .max_files = 10,
+        .format_if_mount_failed = false
+    };
+    esp_err_t err = esp_vfs_spiffs_register(&conf);
+    if (err == ESP_OK) {
+        _LOGI("[M] SPIFFS mounted at /spiffs");
+        return true;
+    }
+    if (err == ESP_ERR_NOT_FOUND) {
+        _LOGW("[M] SPIFFS partition not found (label=spiffs)");
+    } else if (err == ESP_ERR_INVALID_STATE) {
+        _LOGW("[M] SPIFFS already mounted");
+        return true;
+    } else if (err == ESP_ERR_INVALID_SIZE) {
+        _LOGW("[M] SPIFFS partition size invalid");
+    } else if (err == ESP_ERR_NOT_SUPPORTED) {
+        _LOGW("[M] SPIFFS mount not supported");
+    } else {
+        _LOGW("[M] SPIFFS mount failed: 0x%02X", err);
+    }
+    return false;
+}
+
+static void logSpiffsFiles() {
+    DIR* dir = opendir("/spiffs");
+    if (dir == nullptr) {
+        _LOGW("[M] SPIFFS directory /spiffs not available");
+        return;
+    }
+    struct dirent* entry;
+    unsigned count = 0;
+    _LOGI("[M] SPIFFS contents:");
+    while ((entry = readdir(dir)) != nullptr) {
+        _LOGI("[M]   %s", entry->d_name);
+        ++count;
+    }
+    closedir(dir);
+    _LOGI("[M] SPIFFS files count: %u", count);
+}
+
+static void initEpaperDriver() {
+    _LOGI("[M] Initializing Epaper hardware driver");
+    configureOutputPin(static_cast<gpio_num_t>(PIN_EPD_CS_CFG));
+    configureOutputPin(static_cast<gpio_num_t>(PIN_EPD_DC_CFG));
+    configureOutputPin(static_cast<gpio_num_t>(PIN_EPD_RST_CFG));
+    if (PIN_EPD_CS2_CFG >= 0) {
+        configureOutputPin(static_cast<gpio_num_t>(PIN_EPD_CS2_CFG));
+    }
+    gpio_set_level(static_cast<gpio_num_t>(PIN_EPD_CS_CFG), 1);
+    gpio_set_level(static_cast<gpio_num_t>(PIN_EPD_DC_CFG), 0);
+    gpio_set_level(static_cast<gpio_num_t>(PIN_EPD_RST_CFG), 1);
+    if (PIN_EPD_CS2_CFG >= 0) {
+        gpio_set_level(static_cast<gpio_num_t>(PIN_EPD_CS2_CFG), 1);
+    }
+    _LOGI("[M] Epaper driver pins configured CS=%d DC=%d RST=%d BUSY=%d", PIN_EPD_CS_CFG, PIN_EPD_DC_CFG, PIN_EPD_RST_CFG, PIN_EPD_BUSY_CFG);
 }
 
 #if ENABLE_DISPLAY_LVGL
@@ -693,8 +762,27 @@ void displayText(const std::string& raw_text, uint8_t fontNumber, uint8_t x, uin
     ESP_LOGI(TAG, "Extended display text font#%u pos=(%u,%u) len=%u", fontNumber, x, y, static_cast<unsigned>(output.length()));
 }
 
+void displayJpegCentered(const char* path) {
+    if (path == nullptr) {
+        ESP_LOGW(TAG, "displayJpegCentered called with null path");
+        return;
+    }
+
+    lv_obj_t* screen = lv_scr_act();
+    if (screen == nullptr) {
+        ESP_LOGW(TAG, "displayJpegCentered failed: no active screen");
+        return;
+    }
+
+    lv_obj_t* image = lv_img_create(screen);
+    lv_img_set_src(image, path);
+    lv_obj_center(image);
+    ESP_LOGI(TAG, "displayJpegCentered loaded image: %s", path);
+}
+
 void setupDisplay() {
-    _LOGW("[M] Driver display hardware disabilitato: backend LVGL software-only");
+    initEpaperDriver();
+    _LOGI("[M] Epaper driver enabled");
 }
 
 static void epd_flush_cb(lv_disp_drv_t* drv, const lv_area_t* area, lv_color_t* color_p) {
@@ -792,21 +880,30 @@ extern "C" void app_main() {
     ESP_LOGI(TAG, "[M] Starting EPaperQr FreeRTOS application");
     vTaskDelay(pdMS_TO_TICKS(300));
 
+    ESP_LOGI(TAG, "[M] init step: SPIFFS");
+    if (mountSpiffs()) {
+        logSpiffsFiles();
+    }
+#if ENABLE_DISPLAY_LVGL
+    ESP_LOGI(TAG, "[M] init step: display");
+    setupDisplay();
+    ESP_LOGI(TAG, "[M] init step: LVGL");
+    setupLvgl();
+    ESP_LOGI(TAG, "[M] init step: UI");
+    buildUi();
+    ESP_LOGI(TAG, "[M] init step: show logo");
+    displayJpegCentered("/spiffs/logo_n.jpg");
+#else
+    ESP_LOGI(TAG, "[M] init step: display/LVGL skipped (ENABLE_DISPLAY_LVGL=0)");
+#endif
+
     ESP_LOGI(TAG, "[M] init step: WiFi");
     initWifi();
     ESP_LOGI(TAG, "[M] init step: UART master");
-    initUart(UART_MASTER, 9600, PIN_TX_ESP_CFG, PIN_RX_ESP_CFG);
+    gMasterUartReady = initUart(UART_MASTER, 9600, PIN_TX_ESP_CFG, PIN_RX_ESP_CFG);
 #if defined(SCANNER_CONTROL_USE_SERIAL)
     ESP_LOGI(TAG, "[M] init step: UART scanner");
-    initUart(UART_SCANNER, 9600, PIN_SCANNER_TX_CFG, PIN_SCANNER_RX_CFG);
-#if SCANNER_TX_SQUARE_WAVE_ENABLE
-    ESP_LOGI(TAG, "[M] init step: scanner TX square wave");
-    startScannerTxSquareWave();
-#endif
-#endif
-    ESP_LOGI(TAG, "[M] init step: scanner pins");
-    setupScannerPins();
-#if defined(SCANNER_CONTROL_USE_SERIAL)
+    gScannerUartReady = initUart(UART_SCANNER, 9600, PIN_SCANNER_TX_CFG, PIN_SCANNER_RX_CFG);
 #if SCANNER_SERIAL_SELF_TEST_ENABLE
     ESP_LOGI(TAG, "[M] init step: scanner serial self-test");
 #if SCANNER_UART_TX_DIAG_BURST_ENABLE
@@ -824,16 +921,6 @@ extern "C" void app_main() {
 #endif
     ESP_LOGI(TAG, "[M] init step: RGB LED");
     setupRgbLed();
-#if ENABLE_DISPLAY_LVGL
-    ESP_LOGI(TAG, "[M] init step: display");
-    setupDisplay();
-    ESP_LOGI(TAG, "[M] init step: LVGL");
-    setupLvgl();
-    ESP_LOGI(TAG, "[M] init step: UI");
-    buildUi();
-#else
-    ESP_LOGI(TAG, "[M] init step: display/LVGL skipped (ENABLE_DISPLAY_LVGL=0)");
-#endif
     ESP_LOGI(TAG, "[M] init completed");
 
     uint64_t lastLoopLog = esp_timer_get_time() / 1000;
@@ -844,13 +931,17 @@ extern "C" void app_main() {
             lastLoopLog = now;
         }
 
-        handleMasterSerial(UART_MASTER
+        if (gMasterUartReady) {
+            handleMasterSerial(UART_MASTER
+    #if defined(SCANNER_CONTROL_USE_SERIAL)
+                , UART_SCANNER
+    #endif
+            );
+        }
 #if defined(SCANNER_CONTROL_USE_SERIAL)
-            , UART_SCANNER
-#endif
-        );
-#if defined(SCANNER_CONTROL_USE_SERIAL)
-        forwardScannerData(UART_SCANNER, UART_MASTER);
+        if (gScannerUartReady) {
+            forwardScannerData(UART_SCANNER, UART_MASTER);
+        }
 #endif
 #if ENABLE_DISPLAY_LVGL
         lv_timer_handler();

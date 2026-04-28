@@ -154,7 +154,15 @@ void handleMasterSerial(uart_port_t source
 #endif
 ) {
     size_t bufferedLen = 0;
-    uart_get_buffered_data_len(source, &bufferedLen);
+    esp_err_t err = uart_get_buffered_data_len(source, &bufferedLen);
+    if (err != ESP_OK) {
+        static bool uart_error_reported = false;
+        if (!uart_error_reported) {
+            ESP_LOGW(TAG, "UART master handle skipped: uart_get_buffered_data_len failed (err=0x%02X)", err);
+            uart_error_reported = true;
+        }
+        return;
+    }
     if (bufferedLen == 0) {
         return;
     }

@@ -23,6 +23,41 @@ I font disponibili in `src/ui/fonts/` sono:
 
 Le dimensioni 140, 100 e 60 sono destinate all'uso numerico.
 
+## Gestione schermo E-Paper / LVGL
+
+Con LVGL abilitato, il firmware usa un backend software LVGL sulla risoluzione e-paper definita da `EPD_WIDTH` e `EPD_HEIGHT`.
+
+Funzioni principali implementate per la gestione del display:
+
+- `clearDisplay()` — cancella il testo attuale dal `display_label` e mantiene il layout LVGL.
+- `displayText(const std::string& raw_text)` — normalizza il testo, seleziona un font appropriato, gestisce word-wrapping oppure troncamento, e mostra il risultato centrato sul display.
+- `displayText(const std::string& raw_text, uint8_t fontNumber, uint8_t x, uint8_t y)` — mostra testo con font esplicito e posizione `(x,y)`; `fontNumber` viene tradotto nei font disponibili e il testo viene adattato alla larghezza residua di `EPD_WIDTH - x`.
+- `setupDisplay()` — funzione placeholder che segnala lo stato del driver display hardware (qui il backend è LVGL software-only).
+- `setupLvgl()` — inizializza LVGL, alloca il framebuffer e il buffer di disegno, registra il driver display con risoluzione `EPD_WIDTH x EPD_HEIGHT`.
+- `buildUi()` — crea lo schermo e l’etichetta LVGL iniziale, imposta colore testo/font/background e posiziona il label al centro.
+- `displayJpegCentered(const char* path)` — crea un oggetto `lv_img`, carica l’immagine JPEG dalla path specificata e la centra sullo schermo.
+
+Funzioni di generazione testo e layout per LVGL/E-Paper:
+
+- `isNumericOnly(const std::string& text)` — verifica se la stringa contiene solo cifre e spazi bianchi.
+- `normalizeText(const std::string& text)` — converte `\r` in `\n`, `\t` in spazio e lascia gli altri caratteri invariati.
+- `wrapText(const std::string& text, const FontDefinition& fontDef)` — effettua il word-wrapping sulla base dei limiti di caratteri per riga definiti dal font.
+- `joinLines(const std::vector<std::string>& lines)` — concatena le righe avendo `\n` come separatore.
+- `fitsInFont(const std::string& text, const FontDefinition& fontDef)` — valuta se il testo può essere mostrato entro le righe disponibili per quel font.
+- `truncateText(const std::string& text, const FontDefinition& fontDef)` — tronca il testo a `maxLines` righe e aggiunge ` ...` all’ultima riga se serve.
+- `selectFontIndex(const std::string& text)` — sceglie l’indice font migliore in base a contenuto numerico o testuale e a quanto testo può entrare.
+- `resolveExtendedFontIndex(uint8_t fontNumber)` — mappa un numero di font esteso (1..6) sull’indice interno delle definizioni font.
+
+Queste funzioni sono definite nel file `src/main.cpp` e abilitate automaticamente quando `ENABLE_DISPLAY_LVGL` è impostato a `1`.
+
+Esempio di utilizzo:
+
+```cpp
+displayJpegCentered("/home/mauro/Progetti/0.Clienti/MicroHard/test_epaper_bw/src/ui/logo_negative.jpg");
+```
+
+Il percorso deve essere accessibile al file system supportato da LVGL sul dispositivo.
+
 ## Pin e display
 
 Nel file `src/main.cpp` sono configurati i pin per il nuovo hardware:
