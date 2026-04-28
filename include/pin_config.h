@@ -6,7 +6,7 @@
 #define PIN_CONFIG_H
 
 #ifndef PIN_BOOT_BUTTON
-#define PIN_BOOT_BUTTON 4
+#define PIN_BOOT_BUTTON 0
 #endif
 #ifndef PIN_RGB_LED
 #define PIN_RGB_LED 3
@@ -35,6 +35,9 @@
 #ifndef PIN_SPI_MISO
 #define PIN_SPI_MISO -1
 #endif
+#ifndef PIN_EPD_PWR
+#define PIN_EPD_PWR -1
+#endif
 
 #ifndef PIN_SCANNER_TX
 #define PIN_SCANNER_TX 17
@@ -62,6 +65,7 @@ constexpr int8_t PIN_EPD_CS2_CFG = PIN_EPD_CS2;
 constexpr int8_t PIN_EPD_DC_CFG = PIN_EPD_DC;
 constexpr int8_t PIN_EPD_RST_CFG = PIN_EPD_RST;
 constexpr int8_t PIN_EPD_BUSY_CFG = PIN_EPD_BUSY;
+constexpr int8_t PIN_EPD_PWR_CFG = PIN_EPD_PWR;
 constexpr int8_t PIN_SPI_SCK_CFG = PIN_SPI_SCK;
 constexpr int8_t PIN_SPI_MOSI_CFG = PIN_SPI_MOSI;
 constexpr int8_t PIN_SPI_MISO_CFG = PIN_SPI_MISO;

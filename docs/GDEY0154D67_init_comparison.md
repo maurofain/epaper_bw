@@ -12,21 +12,21 @@ Questo documento confronta l’inizializzazione del display e-paper nel firmware
 
 | Funzione / fase | Firmware `test_epaper_bw` | Riferimento Arduino `epd1in54b_V2` |
 |---|---|---|
-| Pin e segnale | imposta solo CS, DC, RST, BUSY e opzionale CS2 | imposta CS, DC, RST, BUSY, PWR |
-| Configurazione GPIO | solo output pin e livello iniziale | pinMode per tutti i pin e alimentazione PWR |
-| Abilitazione alimentazione | assente | `DigitalWrite(PWR_PIN, 1)` |
-| Inizializzazione SPI | assente | `SPI.begin(); SPI.beginTransaction(SPISettings(2000000, MSBFIRST, SPI_MODE0));` |
-| Reset hardware | assente | `Reset()` con HIGH 200ms, LOW 10ms, HIGH 200ms |
-| Attesa BUSY | assente | `WaitUntilIdle()` legge `BUSY_PIN` |
-| Reset software | assente | `SendCommand(0x12)` SWRESET |
-| Impostazione driver | assente | `SendCommand(0x01); SendData(0xC7); SendData(0x00); SendData(0x01);` |
-| Modalità entry dati | assente | `SendCommand(0x11); SendData(0x01);` |
-| Set Ram X/Y bounds | assente | `0x44`, `0x45` con parametri X/Y |
-| Border waveform | assente | `SendCommand(0x3C); SendData(0x05);` |
-| Sensore temperatura | assente | `SendCommand(0x18); SendData(0x80);` |
-| Contatori RAM | assente | `0x4E`, `0x4F` impostano puntatori RAM |
-| Inizializzazione effettiva | solo pin driver, nessun comando SPI al display | sequenza completa di inizializzazione SPI |
-| Refresh / immagine | LVGL flush callback non invia al pannello | `DisplayClear()` / `DisplayFrame(...)` inviano dati e refresh |
+| Pin e segnale | imposta CS, DC, RST, BUSY e opzionale CS2; supporto PWR aggiunto ma dipende da pin configurato | imposta CS, DC, RST, BUSY, PWR |
+| Configurazione GPIO | pin GPIO configurati in output per CS/DC/RST/PWR e input per BUSY | pinMode per tutti i pin e alimentazione PWR |
+| Abilitazione alimentazione | implementata via `epdPowerOn()` se `PIN_EPD_PWR` è definito | `DigitalWrite(PWR_PIN, 1)` |
+| Inizializzazione SPI | implementata con `spi_bus_initialize()` e `spi_bus_add_device()` | `SPI.begin(); SPI.beginTransaction(SPISettings(2000000, MSBFIRST, SPI_MODE0));` |
+| Reset hardware | implementato `epdReset()` con HIGH 200ms, LOW 10ms, HIGH 200ms | `Reset()` con HIGH 200ms, LOW 10ms, HIGH 200ms |
+| Attesa BUSY | implementata `waitUntilIdle()` ma con polarità probabilmente invertita | `WaitUntilIdle()` legge `BUSY_PIN` e attende il livello corretto (tipicamente LOW=busy, HIGH=idle) |
+| Reset software | implementato `SendCommand(0x12)` SWRESET | `SendCommand(0x12)` SWRESET |
+| Impostazione driver | implementato `0x01` + `0xC7 0x00 0x01` | `SendCommand(0x01); SendData(0xC7); SendData(0x00); SendData(0x01);` |
+| Modalità entry dati | implementato `SendCommand(0x11); SendData(0x01)` | `SendCommand(0x11); SendData(0x01);` |
+| Set Ram X/Y bounds | implementato `0x44`, `0x45` con parametri X/Y | `0x44`, `0x45` con parametri X/Y |
+| Border waveform | implementato `SendCommand(0x3C); SendData(0x05)` | `SendCommand(0x3C); SendData(0x05);` |
+| Sensore temperatura | implementato `SendCommand(0x18); SendData(0x80)` | `SendCommand(0x18); SendData(0x80);` |
+| Contatori RAM | implementato `0x4E`, `0x4F` | `0x4E`, `0x4F` impostano puntatori RAM |
+| Inizializzazione effettiva | sequenza di init SPI e comandi di setup ora implementata | sequenza completa di inizializzazione SPI |
+| Refresh / immagine | `epd_flush_cb()` ora invia un’area LVGL al pannello e richiama `DISPLAY_REFRESH` | `DisplayClear()` / `DisplayFrame(...)` inviano dati e refresh |
 
 ## Interazione con LVGL
 
