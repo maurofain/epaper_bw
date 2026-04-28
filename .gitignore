@@ -6,7 +6,7 @@ build/
 *.c.bak
 
 # ESP-IDF generated files
-sdkconfig
+# sdkconfig
 sdkconfig.old
 sdkconfig.cmake
 *.img
