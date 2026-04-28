@@ -87,3 +87,31 @@ Se la porta USB scompare dopo il reset:
 
 - Il parser seriale supporta i comandi 0x00, 0x01, 0x02 e la visualizzazione di stringhe.
 - Il progetto ora è focalizzato su ESP32-S2 e display 1.54".
+
+## Test scanner QR
+
+Funzioni di test/diagnostica scanner QR in firmware:
+
+- `scannerSerialSelfTest` — definita in `src/scanner_control.cpp`, dichiarata in `include/scanner_control.h`, invocata in `src/main.cpp`
+- `runScannerUartTxBurstDiagnostic` — definita in `src/main.cpp`, invocata in modalità diagnostica TX
+- `startScannerTxSquareWave` — definita in `src/main.cpp`, invocata in modalità onda quadra TX
+- `scannerTxWaveCallback` — callback di supporto alla generazione dell’onda quadra TX
+
+Test scanner da PC (script Python):
+
+- `run_listen_only` — definita in `scripts/scanner_pc_probe.py`
+- `run_probe` — definita in `scripts/scanner_pc_probe.py`
+- `send_and_read` — helper usato dai test di probe in `scripts/scanner_pc_probe.py`
+
+## Inizializzazione scanner attuale
+
+La sequenza di inizializzazione attuale è gestita tra `src/main.cpp` e `src/scanner_control.cpp`.
+
+1. In `app_main()` viene inizializzata la UART dello scanner (`UART_SCANNER`) a 9600 baud, quindi viene eseguito `setupScannerPins()`.
+2. `setupScannerPins()` configura i pin di controllo scanner:
+   - in modalità seriale mantiene il pin `PIN_QR_BCRES_CFG` (RESET) come uscita e lo porta a livello logico alto, mentre il pin `PIN_QR_BCTRIG_CFG` (TRIGGER) viene configurato come ingresso;
+   - se abilitato `SCANNER_CONTROL_USE_TRIGGER`, entrambi i pin di controllo vengono configurati come uscite e portati a livello alto.
+3. Dopo la configurazione dei pin, `initializeScanner()` viene chiamata per marcare lo scanner come inizializzato, attivare eventuale configurazione trigger aggiuntiva e attendere 50 ms di stabilizzazione.
+4. Se `SCANNER_SERIAL_SELF_TEST_ENABLE` è attivo, `app_main()` avvia `scannerSerialSelfTest(UART_SCANNER)` per il controllo seriale dello scanner; in questa build la modalità `SCANNER_LISTEN_ONLY_MODE_ENABLE` è impostata per ascoltare continuamente i dati scanner e loggarli in HEX/ASCII.
+
+Questa è la sequenza reale di inizializzazione usata dal firmware in questa versione del progetto.

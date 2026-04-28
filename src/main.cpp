@@ -42,7 +42,7 @@
 #endif
 
 #ifndef SCANNER_SERIAL_SELF_TEST_ENABLE
-#define SCANNER_SERIAL_SELF_TEST_ENABLE 1
+#define SCANNER_SERIAL_SELF_TEST_ENABLE 0
 #endif
 
 #ifndef SCANNER_TX_SQUARE_WAVE_ENABLE
@@ -73,7 +73,7 @@ constexpr uint16_t EPD_HEIGHT = 200;
 #endif
 
 static const char* TAG = "EPaperQr";
-static constexpr const char* kAppLastChangeDescription = "Scanner TTL 9600 in listen-only: log frame RX testo+HEX con terminatore CR (0x0D), test EILSCN salvato";
+static constexpr const char* kAppLastChangeDescription = "Scanner TTL 9600 listen-only: log realtime BYTE in HEX+ASCII senza attesa terminatore";
 static constexpr const char* kAppLastChangeTimestamp = __TIMESTAMP__;
 static const uart_port_t UART_MASTER = UART_NUM_1;
 #if defined(SCANNER_CONTROL_USE_SERIAL)
@@ -816,7 +816,8 @@ extern "C" void app_main() {
     scannerSerialSelfTest(UART_SCANNER);
 #endif
 #else
-    ESP_LOGI(TAG, "[M] init step: scanner serial self-test skipped (SCANNER_SERIAL_SELF_TEST_ENABLE=0)");
+    ESP_LOGI(TAG, "[M] init step: scanner initialization (serial mode, self-test disabled)");
+    initializeScanner();
 #endif
 #else
     initializeScanner();

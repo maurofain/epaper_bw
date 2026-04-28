@@ -34,3 +34,6 @@ Thumbs.db
 .DS_Store
 .AppleDouble
 .LSOverride
+
+# Local logs
+exec.log

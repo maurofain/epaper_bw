@@ -273,9 +273,7 @@ void scannerSerialSelfTest(uart_port_t scannerPort)
     }
 
 #if SCANNER_LISTEN_ONLY_MODE_ENABLE
-    ESP_LOGW(TAG, "[C] SCN listen-only mode enabled: no TX commands, frame terminator=CR (0x0D)");
-    std::string frame;
-    frame.reserve(128);
+    ESP_LOGW(TAG, "[C] SCN listen-only mode enabled: no TX commands, log HEX realtime (no CR wait)");
     while (true)
     {
         uint8_t c = 0;
@@ -285,35 +283,21 @@ void scannerSerialSelfTest(uart_port_t scannerPort)
             continue;
         }
 
-        frame.push_back(static_cast<char>(c));
-        if (c == '\r')
+        char ascii = '.';
+        if (c >= 32 && c <= 126)
         {
-            std::string ascii;
-            ascii.reserve(frame.size());
-            for (char ch : frame)
-            {
-                const uint8_t byte = static_cast<uint8_t>(ch);
-                if (byte >= 32 && byte <= 126)
-                {
-                    ascii.push_back(static_cast<char>(byte));
-                }
-                else if (byte == '\r' || byte == '\n' || byte == '\t')
-                {
-                    ascii.push_back(' ');
-                }
-                else
-                {
-                    ascii.push_back('.');
-                }
-            }
-
-            const std::string hex = bytesToHex(reinterpret_cast<const uint8_t *>(frame.data()), frame.size());
-            ESP_LOGI(TAG, "[C] SCN RX FRAME len=%u term=0x0D hex=[%s] ascii=[%s]",
-                     static_cast<unsigned>(frame.size()),
-                     hex.c_str(),
-                     ascii.c_str());
-            frame.clear();
+            ascii = static_cast<char>(c);
         }
+        else if (c == '\r' || c == '\n' || c == '\t')
+        {
+            ascii = ' ';
+        }
+
+        const std::string hex = bytesToHex(&c, 1);
+        ESP_LOGI(TAG, "[C] SCN RX BYTE hex=[%s] ascii=[%c] dec=%u",
+                 hex.c_str(),
+                 ascii,
+                 static_cast<unsigned>(c));
     }
 #else
     while (true)
