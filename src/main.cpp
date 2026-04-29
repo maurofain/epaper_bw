@@ -86,6 +86,12 @@ static spi_device_handle_t epdSpiHandle = nullptr;
 static bool epdSpiReady = false;
 static bool epdInitialized = false;
 static constexpr int EPD_BUSY_ACTIVE_LEVEL = 0;
+static const uint32_t EPD_BUSY_TIMEOUT_MS = 15000;
+
+static void feed_watchdog()
+{
+    vTaskDelay(pdMS_TO_TICKS(1));
+}
 
 static void configureOutputPin(gpio_num_t pin)
 {
@@ -139,10 +145,16 @@ static void waitUntilIdle()
     {
         const gpio_num_t busyPin = static_cast<gpio_num_t>(PIN_EPD_BUSY_CFG);
         _LOGD("[M] waitUntilIdle: BUSY pin=%d active_level=%d", busyPin, EPD_BUSY_ACTIVE_LEVEL);
+        const TickType_t start = xTaskGetTickCount();
         while (gpio_get_level(busyPin) == EPD_BUSY_ACTIVE_LEVEL)
         {
+            if ((xTaskGetTickCount() - start) > pdMS_TO_TICKS(EPD_BUSY_TIMEOUT_MS))
+            {
+                _LOGW("[M] waitUntilIdle: BUSY timeout");
+                break;
+            }
             _LOGD("[M] waitUntilIdle: BUSY level=%d", gpio_get_level(busyPin));
-            vTaskDelay(pdMS_TO_TICKS(10));
+            feed_watchdog();
         }
         _LOGD("[M] waitUntilIdle: BUSY idle detected level=%d", gpio_get_level(busyPin));
     }
@@ -216,6 +228,64 @@ static bool epdInitSequence()
     sendEpdCommand(0x12); // SWRESET
     waitUntilIdle();
 
+    sendEpdCommand(0x4D);
+    sendEpdData(0x78);
+
+    sendEpdCommand(0x00);
+    sendEpdData(0x0F);
+    sendEpdData(0x29);
+
+    sendEpdCommand(0x01);
+    sendEpdData(0x07);
+    sendEpdData(0x00);
+
+    sendEpdCommand(0x03);
+    sendEpdData(0x10);
+    sendEpdData(0x54);
+    sendEpdData(0x44);
+
+    sendEpdCommand(0x06);
+    sendEpdData(0x05);
+    sendEpdData(0x00);
+    sendEpdData(0x3F);
+    sendEpdData(0x0A);
+    sendEpdData(0x25);
+    sendEpdData(0x12);
+    sendEpdData(0x1A);
+
+    sendEpdCommand(0x50);
+    sendEpdData(0x37);
+
+    sendEpdCommand(0x60);
+    sendEpdData(0x02);
+    sendEpdData(0x02);
+
+    sendEpdCommand(0x61);
+    sendEpdData(static_cast<uint8_t>(EPD_WIDTH / 256));
+    sendEpdData(static_cast<uint8_t>(EPD_WIDTH % 256));
+    sendEpdData(static_cast<uint8_t>(EPD_HEIGHT / 256));
+    sendEpdData(static_cast<uint8_t>(EPD_HEIGHT % 256));
+
+    sendEpdCommand(0xE7);
+    sendEpdData(0x1C);
+
+    sendEpdCommand(0xE3);
+    sendEpdData(0x22);
+
+    sendEpdCommand(0xB4);
+    sendEpdData(0xD0);
+    sendEpdCommand(0xB5);
+    sendEpdData(0x03);
+
+    sendEpdCommand(0xE9);
+    sendEpdData(0x01);
+
+    sendEpdCommand(0x30);
+    sendEpdData(0x08);
+
+    sendEpdCommand(0x04);
+    waitUntilIdle();
+
     sendEpdCommand(0x01); // Driver output control
     sendEpdData(0xC7);
     sendEpdData(0x00);
@@ -285,16 +355,21 @@ static void writeEpdRam(uint8_t command, uint8_t value)
     }
 }
 
+static void epdRefresh()
+{
+    sendEpdCommand(0x22);
+    sendEpdData(0xF7);
+    sendEpdCommand(0x20);
+    waitUntilIdle();
+}
+
 static void epdClearScreen()
 {
     sendEpdCommand(0x11); // data entry mode
     sendEpdData(0x01);
     writeEpdRam(0x24, 0xFF);
-    writeEpdRam(0x26, 0xFF);
-    sendEpdCommand(0x22);
-    sendEpdData(0xF7);
-    sendEpdCommand(0x20);
-    waitUntilIdle();
+    writeEpdRam(0x26, 0x00);
+    epdRefresh();
 }
 
 static void epdFullRefresh()
@@ -319,10 +394,7 @@ static void epdFullRefresh()
     sendEpdData(0xC7);
     sendEpdData(0x00);
 
-    sendEpdCommand(0x22);
-    sendEpdData(0xF7);
-    sendEpdCommand(0x20);
-    waitUntilIdle();
+    epdRefresh();
 }
 
 static void setEpdPartialWindow(const lv_area_t *area)
@@ -422,10 +494,7 @@ static void sendEpdPartialImage(const lv_area_t *area, lv_color_t *color_p)
         }
     }
 
-    sendEpdCommand(0x22);
-    sendEpdData(0xF7);
-    sendEpdCommand(0x20);
-    waitUntilIdle();
+    epdRefresh();
 }
 
 static void epdBlackScreen()
@@ -433,11 +502,8 @@ static void epdBlackScreen()
     sendEpdCommand(0x11); // data entry mode
     sendEpdData(0x01);
     writeEpdRam(0x24, 0x00);
-    writeEpdRam(0x26, 0xFF);
-    sendEpdCommand(0x22);
-    sendEpdData(0xF7);
-    sendEpdCommand(0x20);
-    waitUntilIdle();
+    writeEpdRam(0x26, 0x00);
+    epdRefresh();
 }
 
 static void initBootButton()
