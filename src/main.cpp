@@ -27,6 +27,7 @@
 
 #include "pin_config.h"
 #include "display.h"
+#include "GDEY0154D67.h"
 #include "led_control.h"
 #include "scanner_control.h"
 #include "master_protocol.h"
@@ -374,27 +375,7 @@ static void epdClearScreen()
 
 static void epdFullRefresh()
 {
-    sendEpdCommand(0x11); // data entry mode
-    sendEpdData(0x01);
-
-    sendEpdCommand(0x44); // Ram X address start/end
-    sendEpdData(0x00);
-    sendEpdData(0x18);
-
-    sendEpdCommand(0x45); // Ram Y address start/end
-    sendEpdData(0xC7);
-    sendEpdData(0x00);
-    sendEpdData(0x00);
-    sendEpdData(0x00);
-
-    sendEpdCommand(0x4E); // Set RAM X address
-    sendEpdData(0x00);
-
-    sendEpdCommand(0x4F); // Set RAM Y address
-    sendEpdData(0xC7);
-    sendEpdData(0x00);
-
-    epdRefresh();
+    GDEY0154D67_refresh();
 }
 
 static void setEpdPartialWindow(const lv_area_t *area)
@@ -499,11 +480,7 @@ static void sendEpdPartialImage(const lv_area_t *area, lv_color_t *color_p)
 
 static void epdBlackScreen()
 {
-    sendEpdCommand(0x11); // data entry mode
-    sendEpdData(0x01);
-    writeEpdRam(0x24, 0x00);
-    writeEpdRam(0x26, 0x00);
-    epdRefresh();
+    GDEY0154D67_black_screen();
 }
 
 static void initBootButton()
@@ -543,7 +520,7 @@ static void waitForBootButtonPress()
 
 static void performDisplayTestSequence()
 {
-    if (!epdInitialized)
+    if (!GDEY0154D67_is_initialized())
     {
         ESP_LOGW(TAG, "[M] display test skipped: epaper not initialized");
         return;
@@ -1128,55 +1105,8 @@ static void logSpiffsFiles()
 static void initEpaperDriver()
 {
     _LOGI("[M] Initializing Epaper hardware driver");
-
-    configureOutputPin(static_cast<gpio_num_t>(PIN_EPD_CS_CFG));
-    configureOutputPin(static_cast<gpio_num_t>(PIN_EPD_DC_CFG));
-    configureOutputPin(static_cast<gpio_num_t>(PIN_EPD_RST_CFG));
-    if (PIN_EPD_CS2_CFG >= 0)
-    {
-        configureOutputPin(static_cast<gpio_num_t>(PIN_EPD_CS2_CFG));
-    }
-    if (PIN_EPD_PWR_CFG >= 0)
-    {
-        configureOutputPin(static_cast<gpio_num_t>(PIN_EPD_PWR_CFG));
-        gpio_set_level(static_cast<gpio_num_t>(PIN_EPD_PWR_CFG), 0);
-    }
-    if (PIN_EPD_BUSY_CFG >= 0)
-    {
-        configureInputPin(static_cast<gpio_num_t>(PIN_EPD_BUSY_CFG));
-    }
-
-    gpio_set_level(static_cast<gpio_num_t>(PIN_EPD_CS_CFG), 1);
-    gpio_set_level(static_cast<gpio_num_t>(PIN_EPD_DC_CFG), 0);
-    gpio_set_level(static_cast<gpio_num_t>(PIN_EPD_RST_CFG), 1);
-    if (PIN_EPD_CS2_CFG >= 0)
-    {
-        gpio_set_level(static_cast<gpio_num_t>(PIN_EPD_CS2_CFG), 1);
-    }
-    _LOGI("[M] Epaper driver pins configured CS=%d DC=%d RST=%d BUSY=%d PWR=%d",
-          PIN_EPD_CS_CFG,
-          PIN_EPD_DC_CFG,
-          PIN_EPD_RST_CFG,
-          PIN_EPD_BUSY_CFG,
-          PIN_EPD_PWR_CFG);
-
-    esp_err_t err = initEpaperSpi();
-    if (err != ESP_OK)
-    {
-        _LOGE("[M] Epaper SPI init failed: 0x%02X", err);
-        return;
-    }
-
-    epdPowerOn();
-    epdReset();
-    if (!epdInitSequence())
-    {
-        _LOGE("[M] Epaper init sequence failed");
-        return;
-    }
-
-    epdClearScreen();
-    epdInitialized = true;
+    GDEY0154D67_init();
+    epdInitialized = GDEY0154D67_is_initialized();
 }
 
 #if ENABLE_DISPLAY_LVGL
@@ -1403,14 +1333,36 @@ static uint8_t resolveExtendedFontIndex(uint8_t fontNumber)
 
 void clearDisplay()
 {
-    if (epdInitialized)
+    if (GDEY0154D67_is_initialized())
     {
-        epdClearScreen();
+        GDEY0154D67_clear_screen();
     }
     if (display_label)
     {
         lv_label_set_text(display_label, "");
         lv_obj_align(display_label, LV_ALIGN_CENTER, 0, 0);
+    }
+}
+
+void setDisplayOrientation(DisplayOrientation orientation)
+{
+    switch (orientation)
+    {
+        case DisplayOrientation::ORIENTATION_0:
+            GDEY0154D67_set_orientation(GDEY0154D67_Orientation::ORIENTATION_0);
+            break;
+        case DisplayOrientation::ORIENTATION_90:
+            GDEY0154D67_set_orientation(GDEY0154D67_Orientation::ORIENTATION_90);
+            break;
+        case DisplayOrientation::ORIENTATION_180:
+            GDEY0154D67_set_orientation(GDEY0154D67_Orientation::ORIENTATION_180);
+            break;
+        case DisplayOrientation::ORIENTATION_270:
+            GDEY0154D67_set_orientation(GDEY0154D67_Orientation::ORIENTATION_270);
+            break;
+        default:
+            GDEY0154D67_set_orientation(GDEY0154D67_Orientation::ORIENTATION_0);
+            break;
     }
 }
 
@@ -1465,16 +1417,15 @@ void displayJpegCentered(const char *path)
 void setupDisplay()
 {
     initEpaperDriver();
+    GDEY0154D67_set_orientation(GDEY0154D67_Orientation::ORIENTATION_0);
     _LOGI("[M] Epaper driver enabled");
 }
 
 static void epd_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_p)
 {
-    if (epdInitialized && area != nullptr && color_p != nullptr)
+    if (GDEY0154D67_is_initialized() && area != nullptr && color_p != nullptr)
     {
-        sendEpdCommand(0x11); // data entry mode: left to right, top to bottom
-        sendEpdData(0x01);
-        sendEpdPartialImage(area, color_p);
+        GDEY0154D67_draw_partial(area, color_p);
     }
     lv_disp_flush_ready(drv);
 }
