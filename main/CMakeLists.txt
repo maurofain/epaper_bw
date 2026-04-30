@@ -17,3 +17,7 @@ idf_component_register(
 )
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE SCANNER_CONTROL_USE_SERIAL)
+
+if(MASTER_PROTOCOL_USE_USB_CONSOLE)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE MASTER_PROTOCOL_USE_USB_CONSOLE)
+endif()

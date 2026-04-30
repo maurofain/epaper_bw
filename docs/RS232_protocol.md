@@ -84,7 +84,10 @@ I comandi hanno il formato:
 - `0x00`, `0x01` → richiesta di attivazione dello scanner e refresh totale del display
 - `0x00`, `0x02` → scanner ON
 - `0x00`, `0x03` → scanner OFF
-- `0x00`, `0x04` → LED OFF
+- `0x00`, `0x04` → attiva sfondo bianco e testo nero (default)
+- `0x00`, `0x05` → attiva sfondo nero e testo bianco
+- `0x00`, `0xBB` → esegue un reboot del esp32s2
+- `0x00`, `0xFF` → mostra il logo sull'e-paper
 
 > Il secondo byte specifica il tipo di comando all’interno della categoria `0x00`.
 

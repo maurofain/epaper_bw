@@ -21,6 +21,11 @@
 #include <string>
 #include <vector>
 
+#if defined(MASTER_PROTOCOL_USE_USB_CONSOLE)
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
 #ifndef ENABLE_DISPLAY_LVGL
 #define ENABLE_DISPLAY_LVGL 1
 #endif
@@ -42,6 +47,9 @@ extern "C" const lv_img_dsc_t logo_img;
 #include "master_protocol.h"
 #if ENABLE_DISPLAY_LVGL
 static lv_obj_t *display_label = nullptr;
+static bool g_display_inverted = false; // false = white bg / black text (default)
+static inline lv_color_t themeBg() { return g_display_inverted ? lv_color_black() : lv_color_white(); }
+static inline lv_color_t themeText() { return g_display_inverted ? lv_color_white() : lv_color_black(); }
 static lv_obj_t *fontLoopButton = nullptr;
 static lv_obj_t *fontLoopLabel = nullptr;
 static TaskHandle_t displayTestTaskHandle = nullptr;
@@ -54,6 +62,7 @@ static void showLogoTest();
 static const lv_img_dsc_t *getInvertedLogoImg();
 static void fontLoopTask(void *pvParameter);
 static void performDisplayTestSequence();
+void displayLogo();
 #endif
 
 #define LOG_TAG "EPaperQr"
@@ -98,9 +107,13 @@ constexpr uint16_t EPD_HEIGHT = 200;
 #endif
 
 static const char *TAG = "EPaperQr";
-static constexpr const char *kAppLastChangeDescription = "Scanner TTL 9600 listen-only: log realtime BYTE in HEX+ASCII senza attesa terminatore";
+static constexpr const char *kAppLastChangeDescription = "Prefisso \u00a7: clear display prima del testo";
 static constexpr const char *kAppLastChangeTimestamp = __TIMESTAMP__;
+#if defined(MASTER_PROTOCOL_USE_USB_CONSOLE)
+static const uart_port_t UART_MASTER = UART_NUM_0; // USB console used for master commands, UART init skipped.
+#else
 static const uart_port_t UART_MASTER = UART_NUM_0;
+#endif
 static bool gMasterUartReady = false;
 static spi_device_handle_t epdSpiHandle = nullptr;
 static bool epdSpiReady = false;
@@ -972,6 +985,8 @@ static const FontDefinition fontDefinitions[] = {
     {&lv_font_montserrat_28, 10, 8, "montserrat_28"},
     {&lv_font_montserrat_14, 12, 12, "montserrat_14"},
     {&lv_font_montserrat_14, 18, 15, "montserrat_14"},
+    {&GoogleSans100, 3, 2, "GoogleSans100"},  // index 6: font# 7
+    {&GoogleSans140, 2, 1, "GoogleSans140"},  // index 7: font# 8
 };
 
 static const uint8_t kFontCount = sizeof(fontDefinitions) / sizeof(fontDefinitions[0]);
@@ -1405,6 +1420,10 @@ static uint8_t resolveExtendedFontIndex(uint8_t fontNumber)
         return 1;
     case 6:
         return 0;
+    case 7:
+        return 6; // GoogleSans100
+    case 8:
+        return 7; // GoogleSans140
     default:
         return 4;
     }
@@ -1417,9 +1436,10 @@ static void clearActiveScreen()
     if (screen != nullptr)
     {
         lv_obj_clean(screen);
-        lv_obj_set_style_bg_color(screen, lv_color_white(), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(screen, themeBg(), LV_PART_MAIN);
         lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, LV_PART_MAIN);
     }
+    display_label = nullptr; // lv_obj_clean deleted all children including display_label
 #endif
 }
 
@@ -1431,6 +1451,25 @@ void clearDisplay()
     }
 #if ENABLE_DISPLAY_LVGL
     clearActiveScreen();
+#endif
+}
+
+void setDisplayTheme(bool inverted)
+{
+#if ENABLE_DISPLAY_LVGL
+    g_display_inverted = inverted;
+    lv_obj_t *screen = lv_scr_act();
+    if (screen != nullptr)
+    {
+        lv_obj_set_style_bg_color(screen, themeBg(), LV_PART_MAIN);
+        if (display_label != nullptr)
+        {
+            lv_obj_set_style_bg_color(display_label, themeBg(), LV_PART_MAIN);
+            lv_obj_set_style_text_color(display_label, themeText(), LV_PART_MAIN);
+        }
+        lv_obj_invalidate(screen);
+    }
+    ESP_LOGI(TAG, "Display theme: %s", inverted ? "inverted (black bg/white text)" : "normal (white bg/black text)");
 #endif
 }
 
@@ -1558,6 +1597,16 @@ static void showLogoTest()
 #endif
 }
 
+void displayLogo()
+{
+#if ENABLE_DISPLAY_LVGL
+    clearActiveScreen();
+    showLogoTest();
+#else
+    ESP_LOGW(TAG, "displayLogo called but LVGL display is disabled");
+#endif
+}
+
 void setDisplayOrientation(DisplayOrientation orientation)
 {
     switch (orientation)
@@ -1582,6 +1631,19 @@ void setDisplayOrientation(DisplayOrientation orientation)
 
 void displayText(const std::string &raw_text)
 {
+    if (display_label == nullptr)
+    {
+        lv_obj_t *screen = lv_scr_act();
+        if (screen == nullptr) { ESP_LOGW(TAG, "displayText: no active screen"); return; }
+        display_label = lv_label_create(screen);
+        lv_obj_set_width(display_label, EPD_WIDTH);
+        lv_label_set_long_mode(display_label, LV_LABEL_LONG_WRAP);
+        lv_obj_set_style_text_color(display_label, themeText(), LV_PART_MAIN);
+        lv_obj_set_style_text_align(display_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(display_label, themeBg(), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(display_label, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_align(display_label, LV_ALIGN_CENTER, 0, 0);
+    }
     const std::string normalized = normalizeText(raw_text);
     const uint8_t fontIndex = selectFontIndex(normalized);
     const auto &fontDef = fontDefinitions[fontIndex];
@@ -1595,6 +1657,17 @@ void displayText(const std::string &raw_text)
 
 void displayText(const std::string &raw_text, uint8_t fontNumber, uint8_t x, uint8_t y)
 {
+    if (display_label == nullptr)
+    {
+        lv_obj_t *screen = lv_scr_act();
+        if (screen == nullptr) { ESP_LOGW(TAG, "displayText ext: no active screen"); return; }
+        display_label = lv_label_create(screen);
+        lv_label_set_long_mode(display_label, LV_LABEL_LONG_WRAP);
+        lv_obj_set_style_text_color(display_label, themeText(), LV_PART_MAIN);
+        lv_obj_set_style_text_align(display_label, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(display_label, themeBg(), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(display_label, LV_OPA_COVER, LV_PART_MAIN);
+    }
     const std::string normalized = normalizeText(raw_text);
     const uint8_t fontIndex = resolveExtendedFontIndex(fontNumber);
     const auto &fontDef = fontDefinitions[fontIndex];
@@ -1602,9 +1675,12 @@ void displayText(const std::string &raw_text, uint8_t fontNumber, uint8_t x, uin
     const int32_t width = static_cast<int32_t>(EPD_WIDTH) - x;
     lv_obj_set_style_text_font(display_label, fontDef.font, LV_PART_MAIN);
     lv_label_set_text(display_label, output.c_str());
-    lv_obj_set_width(display_label, width > 0 ? width : 0);
-    lv_obj_set_pos(display_label, x, y);
-    ESP_LOGI(TAG, "Extended display text font#%u pos=(%u,%u) len=%u", fontNumber, x, y, static_cast<unsigned>(output.length()));
+    lv_obj_set_width(display_label, width > 0 ? width : LV_SIZE_CONTENT);
+    // Center text on (x,y): use LV_ALIGN_CENTER with offset relative to screen center (EPD_WIDTH/2, EPD_HEIGHT/2)
+    lv_obj_align(display_label, LV_ALIGN_CENTER,
+                 static_cast<int32_t>(x) - EPD_WIDTH / 2,
+                 static_cast<int32_t>(y) - EPD_HEIGHT / 2);
+    ESP_LOGI(TAG, "Extended display text font#%u center=(%u,%u) len=%u", fontNumber, x, y, static_cast<unsigned>(output.length()));
 }
 
 void displayJpegCentered(const char *path)
@@ -1691,7 +1767,7 @@ void setupLvgl()
     disp_drv->ver_res = EPD_HEIGHT;
     disp_drv->flush_cb = epd_flush_cb;
     disp_drv->draw_buf = draw_buf;
-    disp_drv->full_refresh = 0; // allow LVGL partial refresh based on invalidated regions
+    disp_drv->full_refresh = 1; // use full-screen refresh to ensure EPD receives a complete update
     lv_disp_drv_register(disp_drv);
 }
 
@@ -1701,21 +1777,24 @@ void buildUi()
     lv_obj_set_style_bg_color(screen, lv_color_white(), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, LV_PART_MAIN);
 
-    lv_obj_t *logo = lv_img_create(screen);
-    lv_img_set_src(logo, &logo_img);
-    lv_obj_set_style_img_recolor(logo, lv_color_black(), LV_PART_MAIN);
-    lv_obj_set_style_img_recolor_opa(logo, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_align(logo, LV_ALIGN_TOP_MID, 0, 5);
+    showLogoTest();
 
-    // display_label = lv_label_create(screen);
-    // lv_obj_set_width(display_label, EPD_WIDTH);
-    // lv_label_set_long_mode(display_label, LV_LABEL_LONG_WRAP);
-    // lv_obj_set_style_text_color(display_label, lv_color_black(), LV_PART_MAIN);
-    // lv_obj_set_style_text_font(display_label, &lv_font_montserrat_28, LV_PART_MAIN);
-    // lv_obj_set_style_bg_color(display_label, lv_color_white(), LV_PART_MAIN);
-    // lv_obj_set_style_bg_opa(display_label, LV_OPA_COVER, LV_PART_MAIN);
-    // lv_label_set_text(display_label, "Ready");
-    // lv_obj_align(display_label, LV_ALIGN_TOP_MID, 0, 60);
+    // lv_obj_t *logo = lv_img_create(screen);
+    // lv_img_set_src(logo, &logo_img);
+    // lv_obj_set_style_img_recolor(logo, lv_color_black(), LV_PART_MAIN);
+    // lv_obj_set_style_img_recolor_opa(logo, LV_OPA_COVER, LV_PART_MAIN);
+    // lv_obj_align(logo, LV_ALIGN_TOP_MID, 0, 5);
+
+    display_label = lv_label_create(screen);
+    lv_obj_set_width(display_label, EPD_WIDTH);
+    lv_label_set_long_mode(display_label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_color(display_label, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_text_font(display_label, &lv_font_montserrat_28, LV_PART_MAIN);
+    lv_obj_set_style_text_align(display_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(display_label, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(display_label, LV_OPA_COVER, LV_PART_MAIN);
+    lv_label_set_text(display_label, "Ready");
+    lv_obj_align(display_label, LV_ALIGN_TOP_MID, 0, 60);
 
     // fontLoopButton = lv_btn_create(screen);
     // lv_obj_set_size(fontLoopButton, 180, 40);
@@ -1798,8 +1877,22 @@ extern "C" void app_main()
 
     ESP_LOGI(TAG, "[M] init step: WiFi");
     initWifi();
+#if defined(MASTER_PROTOCOL_USE_USB_CONSOLE)
+    ESP_LOGI(TAG, "[M] init step: USB console master commands");
+    gMasterUartReady = true;
+    int stdinFlags = fcntl(STDIN_FILENO, F_GETFL, 0);
+    if (stdinFlags >= 0)
+    {
+        fcntl(STDIN_FILENO, F_SETFL, stdinFlags | O_NONBLOCK);
+    }
+    else
+    {
+        ESP_LOGW(TAG, "[M] failed to set stdin non-blocking");
+    }
+#else
     ESP_LOGI(TAG, "[M] init step: UART master");
     gMasterUartReady = initUart(UART_MASTER, 9600, PIN_TX_ESP_CFG, PIN_RX_ESP_CFG);
+#endif
 #if defined(SCANNER_CONTROL_USE_SERIAL)
     ESP_LOGI(TAG, "[M] init step: UART scanner");
     gScannerUartReady = initUart(UART_SCANNER, 9600, PIN_SCANNER_TX_CFG, PIN_SCANNER_RX_CFG);

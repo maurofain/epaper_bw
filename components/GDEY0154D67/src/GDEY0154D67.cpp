@@ -13,7 +13,7 @@ static bool epdInitialized = false;
 static GDEY0154D67_Orientation currentOrientation = GDEY0154D67_Orientation::ORIENTATION_0;
 static constexpr uint16_t PANEL_WIDTH = 200;
 static constexpr uint16_t PANEL_HEIGHT = 200;
-static constexpr int EPD_BUSY_ACTIVE_LEVEL = 0; // SSD1681: LOW when busy, HIGH when ready (GxEPD2: wait while pin != HIGH)
+static constexpr int EPD_BUSY_ACTIVE_LEVEL = 1; // SSD1681: HIGH when busy, LOW when ready (matches GxEPD2 busy_level=HIGH)
 static const uint32_t EPD_BUSY_TIMEOUT_MS = 15000;
 
 static void configureOutputPin(gpio_num_t pin)
@@ -97,11 +97,11 @@ static void epdReset()
         return;
     }
     gpio_set_level(static_cast<gpio_num_t>(PIN_EPD_RST_CFG), 1);
-    vTaskDelay(pdMS_TO_TICKS(200));
+    vTaskDelay(pdMS_TO_TICKS(10));
     gpio_set_level(static_cast<gpio_num_t>(PIN_EPD_RST_CFG), 0);
     vTaskDelay(pdMS_TO_TICKS(10));
     gpio_set_level(static_cast<gpio_num_t>(PIN_EPD_RST_CFG), 1);
-    vTaskDelay(pdMS_TO_TICKS(200));
+    vTaskDelay(pdMS_TO_TICKS(10));
 }
 
 static esp_err_t initEpaperSpi()
@@ -197,8 +197,11 @@ static void writeEpdRam(uint8_t command, uint8_t value)
 
 static void epdRefresh()
 {
+    // Fast full update: write temperature register to activate fast LUT (~1s vs ~2s)
+    sendEpdCommand(0x1A);
+    sendEpdData(0x64);
     sendEpdCommand(0x22);
-    sendEpdData(0xF7); // full update sequence
+    sendEpdData(0xD7); // fast full update sequence
     sendEpdCommand(0x20);
     waitUntilIdle();
 }
@@ -224,7 +227,7 @@ static bool epdInitSequence()
 {
     // SSD1681 init sequence (matches GxEPD2_154_GDEY0154D67)
     sendEpdCommand(0x12); // soft reset
-    vTaskDelay(pdMS_TO_TICKS(10));
+    vTaskDelay(pdMS_TO_TICKS(10)); // 10ms as per GxEPD2 (BUSY not asserted by soft reset)
 
     sendEpdCommand(0x01); // Driver output control
     sendEpdData(0xC7);
@@ -241,7 +244,6 @@ static bool epdInitSequence()
     setEpdRamArea(0x00, 0x18, 0x0000, 0x00C7);
     setEpdRamPointer(0x00, 0x0000);
 
-    waitUntilIdle();
     return true;
 }
 
@@ -448,15 +450,7 @@ void GDEY0154D67_draw_partial(const lv_area_t *area, lv_color_t *color_p)
     gpio_set_level(static_cast<gpio_num_t>(PIN_EPD_DC_CFG), 1);
     epdTransmit(buffer, static_cast<size_t>(widthBytes) * static_cast<size_t>(height));
 
-    const bool full_screen_update = (xStart == 0 && xEnd == static_cast<uint8_t>((PANEL_WIDTH / 8) - 1) && yMin == 0 && yMax == static_cast<int>(PANEL_HEIGHT - 1));
-    if (full_screen_update)
-    {
-        epdRefresh();
-    }
-    else
-    {
-        epdRefreshPartial();
-    }
+    epdRefreshPartial();
 
     // Update previous buffer (0x26) to match current — keeps internal state for future updates
     setEpdRamArea(xStart, xEnd, static_cast<uint16_t>(yMin), static_cast<uint16_t>(yMax));

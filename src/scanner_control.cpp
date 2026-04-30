@@ -8,6 +8,7 @@
 #include <freertos/task.h>
 #include <cstdio>
 #include <string>
+#include <unistd.h>
 
 static const char *TAG = "ScannerControl";
 static bool scannerInitialized = false;
@@ -378,8 +379,13 @@ void forwardScannerData(uart_port_t source, uart_port_t destination)
                 ESP_LOGI(TAG, "[C] Scanner line complete (len=%u): %s",
                          static_cast<unsigned>(scannerBuffer.size()),
                          scannerBuffer.c_str());
+#if defined(MASTER_PROTOCOL_USE_USB_CONSOLE)
+                const int writtenPayload = static_cast<int>(write(STDOUT_FILENO, scannerBuffer.c_str(), scannerBuffer.size()));
+                const int writtenCrLf = static_cast<int>(write(STDOUT_FILENO, "\r\n", 2));
+#else
                 const int writtenPayload = uart_write_bytes(destination, scannerBuffer.c_str(), scannerBuffer.size());
                 const int writtenCrLf = uart_write_bytes(destination, "\r\n", 2);
+#endif
                 if (writtenPayload > 0)
                 {
                     forwardedBytes += static_cast<size_t>(writtenPayload);
@@ -398,8 +404,13 @@ void forwardScannerData(uart_port_t source, uart_port_t destination)
             if (scannerBuffer.length() > 240)
             {
                 ESP_LOGW(TAG, "[C] Scanner chunk flush (len=%u)", static_cast<unsigned>(scannerBuffer.size()));
+#if defined(MASTER_PROTOCOL_USE_USB_CONSOLE)
+                const int writtenPayload = static_cast<int>(write(STDOUT_FILENO, scannerBuffer.c_str(), scannerBuffer.size()));
+                const int writtenCrLf = static_cast<int>(write(STDOUT_FILENO, "\r\n", 2));
+#else
                 const int writtenPayload = uart_write_bytes(destination, scannerBuffer.c_str(), scannerBuffer.size());
                 const int writtenCrLf = uart_write_bytes(destination, "\r\n", 2);
+#endif
                 if (writtenPayload > 0)
                 {
                     forwardedBytes += static_cast<size_t>(writtenPayload);
