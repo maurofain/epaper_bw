@@ -65,6 +65,7 @@ La stringa ricevuta deve essere impaginata sul display con queste regole:
 - ridurre la dimensione del font se necessario fino a che il testo si adatta;
 - costruire le righe raggruppando quante più parole possibili;
 - se il testo non entra con tutte le righe disponibili, troncare lasciando gli ultimi 4 caratteri in ` ...`.
+- il carattere § a inizio testo effettua la cancellazione del pannello ma non viene stampato
 
 Font pianificati:
 - `GoogleSans100` per numeri `0-9`
