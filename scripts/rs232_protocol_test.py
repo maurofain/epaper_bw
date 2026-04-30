@@ -200,20 +200,30 @@ def draw_windows(
     left_win.addstr(7, 4, "t - testo auto")
     left_win.addstr(8, 4, "e - testo esteso")
     left_win.addstr(9, 4, "l - LED values")
-    left_win.addstr(10, 4, "q - esci")
+    left_win.addstr(10, 4, "w - watch secondi")
+    left_win.addstr(11, 4, "d - countdown 60..0")
+    left_win.addstr(12, 4, "q - esci")
     if state["mode"] == "c":
-        left_win.addstr(12, 2, "Comandi 0x00:")
-        left_win.addstr(13, 4, "0 - refresh totale")
-        left_win.addstr(14, 4, "1 - scanner ON + refresh")
-        left_win.addstr(15, 4, "2 - scanner ON")
-        left_win.addstr(16, 4, "3 - scanner OFF")
-        left_win.addstr(17, 4, "4 - tema normale (bianco/nero)")
-        left_win.addstr(18, 4, "5 - tema invertito (nero/bianco)")
-        left_win.addstr(19, 4, "b - reboot")
-        left_win.addstr(20, 4, "f - mostra logo")
-        status_line = 21
+        left_win.addstr(13, 2, "Comandi 0x00:")
+        left_win.addstr(14, 4, "0 - refresh totale")
+        left_win.addstr(15, 4, "1 - scanner ON + refresh")
+        left_win.addstr(16, 4, "2 - scanner ON")
+        left_win.addstr(17, 4, "3 - scanner OFF")
+        left_win.addstr(18, 4, "4 - tema normale (bianco/nero)")
+        left_win.addstr(19, 4, "5 - tema invertito (nero/bianco)")
+        left_win.addstr(20, 4, "b - reboot")
+        left_win.addstr(21, 4, "f - mostra logo")
+        status_line = 22
+    elif state["mode"] == "w":
+        left_win.addstr(14, 2, "Watch: invio ogni secondo")
+        left_win.addstr(15, 4, "Premi qualsiasi tasto per fermare")
+        status_line = 17
+    elif state["mode"] == "d":
+        left_win.addstr(14, 2, "Countdown 60..0 (inv. a 15)")
+        left_win.addstr(15, 4, "Premi qualsiasi tasto per fermare")
+        status_line = 17
     else:
-        status_line = 11
+        status_line = 14
     left_win.addstr(status_line, 2, "Status:")
     left_win.addstr(status_line + 1, 4, state["status"][: left_win.getmaxyx()[1] - 6])
     left_win.addstr(rows - 7, 2, "Nota: § prima del testo = clear display")
@@ -248,6 +258,14 @@ def set_command_state(state: dict, mode: str) -> None:
     elif mode == "r":
         state["prompt_text"] = "Premi invio per reboot"
         state["status"] = "Reboot 0x00 0xBB"
+    elif mode == "w":
+        state["prompt_text"] = "Invio testo/secondi ogni 1s - premi qualsiasi tasto per fermare"
+        state["status"] = "Watch attivo"
+    elif mode == "d":
+        state["prompt_text"] = "Countdown 60..0 ogni 1s (inv. a 15, reset a 0) - qualsiasi tasto ferma"
+        state["status"] = "Countdown attivo"
+        state["ctx"]["d_counter"] = 60
+        state["ctx"]["d_inverted"] = False
     elif mode == "t":
         state["prompt_text"] = "Inserisci testo (usa \\n per CR)"
         state["status"] = "Testo auto"
@@ -263,7 +281,7 @@ def complete_command(state: dict) -> None:
     state["active"] = False
     state["mode"] = ""
     state["step"] = 0
-    state["prompt_text"] = "Premi c/t/e/l o q"
+    state["prompt_text"] = "Premi c/i/r/t/e/l/w/d o q"
     state["status"] = "Pronto"
     state["answers"] = []
     state["ctx"] = {}
@@ -457,11 +475,13 @@ def run_curses_interface(
         "step": 0,
         "answers": [],
         "ctx": {},
-        "prompt_text": "Premi c/t/e/l o q",
+        "prompt_text": "Premi c/i/r/t/e/l/w/d o q",
         "input_line": "",
         "status": "Pronto",
         "last_tx": "",
         "rx_buffer": b"",
+        "last_w_send": 0.0,
+        "last_d_send": 0.0,
     }
     log_lines: List[str] = []
 
@@ -484,6 +504,41 @@ def run_curses_interface(
             for raw_line in lines:
                 append_log(log_lines, f"RX: {to_ascii(raw_line)}")
 
+        # Countdown mode: send counter every 1s, invert at 15, reset at 0
+        if state["mode"] == "d":
+            now = time.time()
+            if now - state["last_d_send"] >= 1.0:
+                ctr = state["ctx"]["d_counter"]
+                payload = normalize_text(str(ctr))
+                _, warning = send_packet(
+                    ser, bytes([0x01, len(payload)]) + payload,
+                    f"COUNTDOWN {ctr}", log_lines, exec_log=exec_log,
+                )
+                state["status"] = warning if warning else f"Countdown: {ctr}"
+                state["last_d_send"] = now
+                if ctr == 15 and not state["ctx"]["d_inverted"]:
+                    send_packet(ser, bytes([0x00, 0x05]), "CMD tema invertito", log_lines, exec_log=exec_log)
+                    state["ctx"]["d_inverted"] = True
+                if ctr == 0:
+                    send_packet(ser, bytes([0x00, 0x04]), "CMD tema normale", log_lines, exec_log=exec_log)
+                    state["ctx"]["d_inverted"] = False
+                    state["ctx"]["d_counter"] = 60
+                else:
+                    state["ctx"]["d_counter"] = ctr - 1
+
+        # Watch mode: send current seconds every 1s
+        if state["mode"] == "w":
+            now = time.time()
+            if now - state["last_w_send"] >= 1.0:
+                sec = time.localtime().tm_sec
+                payload = normalize_text(str(sec))
+                _, warning = send_packet(
+                    ser, bytes([0x01, len(payload)]) + payload,
+                    f"WATCH {sec:02d}s", log_lines, exec_log=exec_log,
+                )
+                state["status"] = warning if warning else f"Watch: inviato {sec:02d}s"
+                state["last_w_send"] = now
+
         try:
             ch = stdscr.get_wch()
         except curses.error:
@@ -491,6 +546,13 @@ def run_curses_interface(
 
         if ch is None:
             time.sleep(0.05)
+            continue
+
+        # In watch/countdown mode any key stops it; 'q' also exits the app
+        if state["mode"] in {"w", "d"}:
+            if isinstance(ch, str) and ch.lower() == "q":
+                break
+            complete_command(state)
             continue
 
         if isinstance(ch, str) and ch == "\n":
@@ -505,7 +567,7 @@ def run_curses_interface(
             state["input_line"] = state["input_line"][:-1]
         elif isinstance(ch, str) and ch.lower() == "q" and not state["active"]:
             break
-        elif isinstance(ch, str) and not state["active"] and ch.lower() in {"c", "i", "r", "t", "e", "l"}:
+        elif isinstance(ch, str) and not state["active"] and ch.lower() in {"c", "i", "r", "t", "e", "l", "w", "d"}:
             set_command_state(state, ch.lower())
             state["input_line"] = ""
         elif isinstance(ch, str) and ch == "\t":

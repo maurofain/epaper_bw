@@ -17,12 +17,12 @@ I (39) boot:  5 ota_1            OTA app          00 11 00260000 00120000
 I (40) boot:  6 spiffs           Unknown data     01 82 00380000 00080000
 I (41) boot: End of partition table
 I (41) boot: Defaulting to factory image
-I (41) esp_image: segment 0: paddr=00020020 vaddr=3f000020 size=460a4h (286884) map
-I (100) esp_image: segment 1: paddr=000660cc vaddr=3ffcd780 size=03a34h ( 14900) load
-I (103) esp_image: segment 2: paddr=00069b08 vaddr=40024000 size=06510h ( 25872) load
-I (110) esp_image: segment 3: paddr=00070020 vaddr=40080020 size=9d124h (643364) map
-I (241) esp_image: segment 4: paddr=0010d14c vaddr=4002a510 size=13270h ( 78448) load
-I (261) esp_image: segment 5: paddr=001203c4 vaddr=50000000 size=00020h (    32) load
+I (41) esp_image: segment 0: paddr=00020020 vaddr=3f000020 size=4609ch (286876) map
+I (100) esp_image: segment 1: paddr=000660c4 vaddr=3ffcd780 size=03a34h ( 14900) load
+I (103) esp_image: segment 2: paddr=00069b00 vaddr=40024000 size=06518h ( 25880) load
+I (110) esp_image: segment 3: paddr=00070020 vaddr=40080020 size=9d2c0h (643776) map
+I (241) esp_image: segment 4: paddr=0010d2e8 vaddr=4002a518 size=13268h ( 78440) load
+I (261) esp_image: segment 5: paddr=00120558 vaddr=50000000 size=00020h (    32) load
 I (274) boot: Loaded app from partition at offset 0x20000
 I (274) boot: Disabling RNG early entropy source...
 I (294) spi_flash: detected chip: generic
@@ -32,70 +32,222 @@ I (295) main_task: Calling app_main()
 
 [M] app_main entry, reset_reason=3 (SW)
 I (297) EPaperQr: [M] Last change: Prefisso §: clear display prima del testo
-I (298) EPaperQr: [M] Last change timestamp: Thu Apr 30 19:07:13 2026
+I (298) EPaperQr: [M] Last change timestamp: Thu Apr 30 19:45:56 2026
 I (299) EPaperQr: [M] Starting EPaperQr FreeRTOS application
 I (599) EPaperQr: [M] init step: SPIFFS
 I (611) EPaperQr: [M] SPIFFS mounted at /spiffs
 I (611) EPaperQr: [M] SPIFFS contents:
-I (611) EPaperQr: [M]   logo_n3.jpg
+I (612) EPaperQr: [M]   logo_n3.jpg
 I (612) EPaperQr: [M]   logo_n2.jpg
-I (612) EPaperQr: [M]   .gitkeep
+I (613) EPaperQr: [M]   .gitkeep
 I (613) EPaperQr: [M]   logo_n.jpg
-I (619) EPaperQr: [M] SPIFFS files count: 4
+I (620) EPaperQr: [M] SPIFFS files count: 4
 I (620) EPaperQr: [M] init step: display
 I (620) EPaperQr: [M] Initializing Epaper hardware driver
-I (2480) GDEY0154D67: EPD initialized
-I (2480) EPaperQr: [M] Epaper driver enabled
-I (2480) EPaperQr: [M] init step: LVGL
-I (2485) EPaperQr: [M] init step: UI
-I (2495) EPaperQr: [M] init step: WiFi
-I (2504) wifi:wifi driver task: 3fff75c4, prio:23, stack:3584, core=0
-I (2510) wifi:wifi firmware version: ee91c8c
-I (2511) wifi:wifi certification version: v7.0
-I (2511) wifi:config NVS flash: enabled
-I (2511) wifi:config nano formatting: disabled
-I (2512) wifi:Init data frame dynamic rx buffer num: 32
-I (2512) wifi:Init static rx mgmt buffer num: 5
-I (2512) wifi:Init management short buffer num: 32
-I (2513) wifi:Init dynamic tx buffer num: 32
-I (2513) wifi:Init static rx buffer size: 1600
-W (2513) wifi:malloc buffer fail
-I (2513) wifi:Init static rx buffer num: 6
-I (2514) wifi:Init dynamic rx buffer num: 32
-E (2514) wifi:Expected to init 10 rx buffer, actual is 6
-I (2514) wifi:Deinit lldesc rx mblock:0
-I (2514) wifi:Deinit lldesc rx mblock:0
-I (2515) wifi:Deinit lldesc rx mblock:0
-I (2515) wifi:Deinit lldesc rx mblock:0
-W (2517) wifi_init: Failed to unregister Rx callbacks
-E (2517) wifi_init: Failed to deinit Wi-Fi driver (0x3001)
-E (2517) wifi_init: Failed to deinit Wi-Fi (0x3001)
-E (2517) EPaperQr: esp_wifi_init failed: 0x101
-I (2518) EPaperQr: [M] init step: USB console master commands
-I (2518) EPaperQr: [M] init step: UART scanner
-I (2518) EPaperQr: Initializing UART 1 @ 9600 baud TX=17 RX=18
-I (2519) EPaperQr: UART 1 initialized successfully
-I (2519) EPaperQr: [M] init step: scanner initialization (serial mode, self-test disabled)
-I (2521) ScannerControl: [C] initializeScanner start
-I (2571) ScannerControl: [C] Scanner control pins configured
-I (2571) ScannerControl: [C] Scanner initialization phase complete
-I (2572) EPaperQr: [M] init step: RGB LED
-W (2572) led_control: [C] WS2812 driver temporaneamente disabilitato (PIN=3)
-I (2573) EPaperQr: [M] init completed
-I (5387) MasterProtocol: Command 0x00 0xAA: master init received
-I (12578) EPaperQr: Main loop heartbeat
-I (14888) MasterProtocol: Complete text payload: �ciao [hex: A7 63 69 61 6F ]
-I (14889) MasterProtocol: § prefix: clearing display before text
-I (16716) EPaperQr: Display text using montserrat_28
-I (22583) EPaperQr: Main loop heartbeat
-I (32588) EPaperQr: Main loop heartbeat
-I (42593) EPaperQr: Main loop heartbeat
-I (52598) EPaperQr: Main loop heartbeat
-I (62603) EPaperQr: Main loop heartbeat
-I (72608) EPaperQr: Main loop heartbeat
-I (74528) MasterProtocol: Complete extended text payload: font=2 x=100 y=100 text=ciao
-I (74531) EPaperQr: Extended display text font#2 center=(100,100) len=4
-I (82611) EPaperQr: Main loop heartbeat
-I (89751) MasterProtocol: Complete extended text payload: font=5 x=100 y=100 text=ciao
-I (89754) EPaperQr: Extended display text font#5 center=(100,100) len=4
-I (92615) EPaperQr: Main loop heartbeat
+I (2481) GDEY0154D67: EPD initialized
+I (2481) EPaperQr: [M] Epaper driver enabled
+I (2481) EPaperQr: [M] init step: LVGL
+I (2487) EPaperQr: [M] init step: UI
+I (2490) EPaperQr: [M] init step: WiFi
+I (2499) wifi:wifi driver task: 3fff75c4, prio:23, stack:3584, core=0
+I (2505) wifi:wifi firmware version: ee91c8c
+I (2506) wifi:wifi certification version: v7.0
+I (2506) wifi:config NVS flash: enabled
+I (2506) wifi:config nano formatting: disabled
+I (2507) wifi:Init data frame dynamic rx buffer num: 32
+I (2507) wifi:Init static rx mgmt buffer num: 5
+I (2507) wifi:Init management short buffer num: 32
+I (2508) wifi:Init dynamic tx buffer num: 32
+I (2508) wifi:Init static rx buffer size: 1600
+W (2508) wifi:malloc buffer fail
+I (2509) wifi:Init static rx buffer num: 6
+I (2509) wifi:Init dynamic rx buffer num: 32
+E (2509) wifi:Expected to init 10 rx buffer, actual is 6
+I (2509) wifi:Deinit lldesc rx mblock:0
+I (2510) wifi:Deinit lldesc rx mblock:0
+I (2510) wifi:Deinit lldesc rx mblock:0
+I (2510) wifi:Deinit lldesc rx mblock:0
+W (2512) wifi_init: Failed to unregister Rx callbacks
+E (2512) wifi_init: Failed to deinit Wi-Fi driver (0x3001)
+E (2512) wifi_init: Failed to deinit Wi-Fi (0x3001)
+E (2513) EPaperQr: esp_wifi_init failed: 0x101
+I (2513) EPaperQr: [M] init step: USB console master commands
+I (2513) EPaperQr: [M] init step: UART scanner
+I (2513) EPaperQr: Initializing UART 1 @ 9600 baud TX=17 RX=18
+I (2514) EPaperQr: UART 1 initialized successfully
+I (2514) EPaperQr: [M] init step: scanner initialization (serial mode, self-test disabled)
+I (2516) ScannerControl: [C] initializeScanner start
+I (2566) ScannerControl: [C] Scanner control pins configured
+I (2566) ScannerControl: [C] Scanner initialization phase complete
+I (2567) EPaperQr: [M] init step: RGB LED
+W (2567) led_control: [C] WS2812 driver temporaneamente disabilitato (PIN=3)
+I (2568) EPaperQr: [M] init completed
+I (5490) MasterProtocol: Command 0x00 0xAA: master init received
+I (6391) MasterProtocol: Complete text payload: 60 [hex: 36 30 ]
+I (6400) EPaperQr: Display text using GoogleSans140
+I (7396) MasterProtocol: Complete text payload: 59 [hex: 35 39 ]
+I (7399) EPaperQr: Display text using GoogleSans140
+I (8405) MasterProtocol: Complete text payload: 58 [hex: 35 38 ]
+I (8408) EPaperQr: Display text using GoogleSans140
+I (9409) MasterProtocol: Complete text payload: 57 [hex: 35 37 ]
+I (9412) EPaperQr: Display text using GoogleSans140
+I (10413) MasterProtocol: Complete text payload: 56 [hex: 35 36 ]
+I (10416) EPaperQr: Display text using GoogleSans140
+I (11417) MasterProtocol: Complete text payload: 55 [hex: 35 35 ]
+I (11420) EPaperQr: Display text using GoogleSans140
+I (12421) MasterProtocol: Complete text payload: 54 [hex: 35 34 ]
+I (12424) EPaperQr: Display text using GoogleSans140
+I (12815) EPaperQr: Main loop heartbeat
+I (13430) MasterProtocol: Complete text payload: 53 [hex: 35 33 ]
+I (13433) EPaperQr: Display text using GoogleSans140
+I (14434) MasterProtocol: Complete text payload: 52 [hex: 35 32 ]
+I (14437) EPaperQr: Display text using GoogleSans140
+I (15438) MasterProtocol: Complete text payload: 51 [hex: 35 31 ]
+I (15441) EPaperQr: Display text using GoogleSans140
+I (16441) MasterProtocol: Complete text payload: 50 [hex: 35 30 ]
+I (16444) EPaperQr: Display text using GoogleSans140
+I (17450) MasterProtocol: Complete text payload: 49 [hex: 34 39 ]
+I (17453) EPaperQr: Display text using GoogleSans140
+I (18454) MasterProtocol: Complete text payload: 48 [hex: 34 38 ]
+I (18457) EPaperQr: Display text using GoogleSans140
+I (19458) MasterProtocol: Complete text payload: 47 [hex: 34 37 ]
+I (19461) EPaperQr: Display text using GoogleSans140
+I (20462) MasterProtocol: Complete text payload: 46 [hex: 34 36 ]
+I (20465) EPaperQr: Display text using GoogleSans140
+I (21471) MasterProtocol: Complete text payload: 45 [hex: 34 35 ]
+I (21474) EPaperQr: Display text using GoogleSans140
+I (22475) MasterProtocol: Complete text payload: 44 [hex: 34 34 ]
+I (22478) EPaperQr: Display text using GoogleSans140
+I (22869) EPaperQr: Main loop heartbeat
+I (23479) MasterProtocol: Complete text payload: 43 [hex: 34 33 ]
+I (23482) EPaperQr: Display text using GoogleSans140
+I (24488) MasterProtocol: Complete text payload: 42 [hex: 34 32 ]
+I (24491) EPaperQr: Display text using GoogleSans140
+I (25492) MasterProtocol: Complete text payload: 41 [hex: 34 31 ]
+I (25495) EPaperQr: Display text using GoogleSans140
+I (26496) MasterProtocol: Complete text payload: 40 [hex: 34 30 ]
+I (26499) EPaperQr: Display text using GoogleSans140
+I (27505) MasterProtocol: Complete text payload: 39 [hex: 33 39 ]
+I (27508) EPaperQr: Display text using GoogleSans140
+I (28509) MasterProtocol: Complete text payload: 38 [hex: 33 38 ]
+I (28512) EPaperQr: Display text using GoogleSans140
+I (29513) MasterProtocol: Complete text payload: 37 [hex: 33 37 ]
+I (29516) EPaperQr: Display text using GoogleSans140
+I (30517) MasterProtocol: Complete text payload: 36 [hex: 33 36 ]
+I (30520) EPaperQr: Display text using GoogleSans140
+I (31526) MasterProtocol: Complete text payload: 35 [hex: 33 35 ]
+I (31529) EPaperQr: Display text using GoogleSans140
+I (32530) MasterProtocol: Complete text payload: 34 [hex: 33 34 ]
+I (32533) EPaperQr: Display text using GoogleSans140
+I (32924) EPaperQr: Main loop heartbeat
+I (33534) MasterProtocol: Complete text payload: 33 [hex: 33 33 ]
+I (33537) EPaperQr: Display text using GoogleSans140
+I (34543) MasterProtocol: Complete text payload: 32 [hex: 33 32 ]
+I (34546) EPaperQr: Display text using GoogleSans140
+I (35552) MasterProtocol: Complete text payload: 31 [hex: 33 31 ]
+I (35555) EPaperQr: Display text using GoogleSans140
+I (36555) MasterProtocol: Complete text payload: 30 [hex: 33 30 ]
+I (36558) EPaperQr: Display text using GoogleSans140
+I (37559) MasterProtocol: Complete text payload: 29 [hex: 32 39 ]
+I (37562) EPaperQr: Display text using GoogleSans140
+I (38568) MasterProtocol: Complete text payload: 28 [hex: 32 38 ]
+I (38571) EPaperQr: Display text using GoogleSans140
+I (39572) MasterProtocol: Complete text payload: 27 [hex: 32 37 ]
+I (39575) EPaperQr: Display text using GoogleSans140
+I (40576) MasterProtocol: Complete text payload: 26 [hex: 32 36 ]
+I (40579) EPaperQr: Display text using GoogleSans140
+I (41580) MasterProtocol: Complete text payload: 25 [hex: 32 35 ]
+I (41583) EPaperQr: Display text using GoogleSans140
+I (42589) MasterProtocol: Complete text payload: 24 [hex: 32 34 ]
+I (42592) EPaperQr: Display text using GoogleSans140
+I (42983) EPaperQr: Main loop heartbeat
+I (43593) MasterProtocol: Complete text payload: 23 [hex: 32 33 ]
+I (43596) EPaperQr: Display text using GoogleSans140
+I (44602) MasterProtocol: Complete text payload: 22 [hex: 32 32 ]
+I (44605) EPaperQr: Display text using GoogleSans140
+I (45605) MasterProtocol: Complete text payload: 21 [hex: 32 31 ]
+I (45608) EPaperQr: Display text using GoogleSans140
+I (46613) MasterProtocol: Complete text payload: 20 [hex: 32 30 ]
+I (46616) EPaperQr: Display text using GoogleSans140
+I (47617) MasterProtocol: Complete text payload: 19 [hex: 31 39 ]
+I (47620) EPaperQr: Display text using GoogleSans140
+I (48620) MasterProtocol: Complete text payload: 18 [hex: 31 38 ]
+I (48623) EPaperQr: Display text using GoogleSans140
+I (49628) MasterProtocol: Complete text payload: 17 [hex: 31 37 ]
+I (49631) EPaperQr: Display text using GoogleSans140
+I (50636) MasterProtocol: Complete text payload: 16 [hex: 31 36 ]
+I (50639) EPaperQr: Display text using GoogleSans140
+I (51639) MasterProtocol: Complete text payload: 15 [hex: 31 35 ]
+I (51642) EPaperQr: Display text using GoogleSans140
+I (52032) MasterProtocol: Master serial command received: 0x00 0x05
+I (52033) MasterProtocol: Command 0x00 0x05: theme inverted (black bg/white text)
+I (52035) EPaperQr: Display theme: inverted (black bg/white text)
+I (52695) MasterProtocol: Complete text payload: 14 [hex: 31 34 ]
+I (52698) EPaperQr: Display text using GoogleSans140
+I (53090) EPaperQr: Main loop heartbeat
+I (53700) MasterProtocol: Complete text payload: 13 [hex: 31 33 ]
+I (53703) EPaperQr: Display text using GoogleSans140
+I (54705) MasterProtocol: Complete text payload: 12 [hex: 31 32 ]
+I (54708) EPaperQr: Display text using GoogleSans140
+I (55714) MasterProtocol: Complete text payload: 11 [hex: 31 31 ]
+I (55717) EPaperQr: Display text using GoogleSans140
+I (56718) MasterProtocol: Complete text payload: 10 [hex: 31 30 ]
+I (56721) EPaperQr: Display text using GoogleSans140
+I (57723) MasterProtocol: Complete text payload: 9 [hex: 39 ]
+I (57725) EPaperQr: Display text using GoogleSans140
+I (58730) MasterProtocol: Complete text payload: 8 [hex: 38 ]
+I (58732) EPaperQr: Display text using GoogleSans140
+I (59737) MasterProtocol: Complete text payload: 7 [hex: 37 ]
+I (59739) EPaperQr: Display text using GoogleSans140
+I (60749) MasterProtocol: Complete text payload: 6 [hex: 36 ]
+I (60751) EPaperQr: Display text using GoogleSans140
+I (61751) MasterProtocol: Complete text payload: 5 [hex: 35 ]
+I (61753) EPaperQr: Display text using GoogleSans140
+I (62758) MasterProtocol: Complete text payload: 4 [hex: 34 ]
+I (62760) EPaperQr: Display text using GoogleSans140
+I (63150) EPaperQr: Main loop heartbeat
+I (63765) MasterProtocol: Complete text payload: 3 [hex: 33 ]
+I (63767) EPaperQr: Display text using GoogleSans140
+I (64772) MasterProtocol: Complete text payload: 2 [hex: 32 ]
+I (64774) EPaperQr: Display text using GoogleSans140
+I (65779) MasterProtocol: Complete text payload: 1 [hex: 31 ]
+I (65781) EPaperQr: Display text using GoogleSans140
+I (66781) MasterProtocol: Complete text payload: 0 [hex: 30 ]
+I (66783) EPaperQr: Display text using GoogleSans140
+I (67173) MasterProtocol: Master serial command received: 0x00 0x04
+I (67174) MasterProtocol: Command 0x00 0x04: theme normal (white bg/black text)
+I (67176) EPaperQr: Display theme: normal (white bg/black text)
+I (67839) MasterProtocol: Complete text payload: 60 [hex: 36 30 ]
+I (67842) EPaperQr: Display text using GoogleSans140
+I (68843) MasterProtocol: Complete text payload: 59 [hex: 35 39 ]
+I (68846) EPaperQr: Display text using GoogleSans140
+I (69852) MasterProtocol: Complete text payload: 58 [hex: 35 38 ]
+I (69855) EPaperQr: Display text using GoogleSans140
+I (70856) MasterProtocol: Complete text payload: 57 [hex: 35 37 ]
+I (70859) EPaperQr: Display text using GoogleSans140
+I (71860) MasterProtocol: Complete text payload: 56 [hex: 35 36 ]
+I (71863) EPaperQr: Display text using GoogleSans140
+I (72869) MasterProtocol: Complete text payload: 55 [hex: 35 35 ]
+I (72872) EPaperQr: Display text using GoogleSans140
+I (73263) EPaperQr: Main loop heartbeat
+I (73873) MasterProtocol: Complete text payload: 54 [hex: 35 34 ]
+I (73876) EPaperQr: Display text using GoogleSans140
+I (74877) MasterProtocol: Complete text payload: 53 [hex: 35 33 ]
+I (74880) EPaperQr: Display text using GoogleSans140
+I (75886) MasterProtocol: Complete text payload: 52 [hex: 35 32 ]
+I (75889) EPaperQr: Display text using GoogleSans140
+I (76890) MasterProtocol: Complete text payload: 51 [hex: 35 31 ]
+I (76893) EPaperQr: Display text using GoogleSans140
+I (77898) MasterProtocol: Complete text payload: 50 [hex: 35 30 ]
+I (77901) EPaperQr: Display text using GoogleSans140
+I (78902) MasterProtocol: Complete text payload: 49 [hex: 34 39 ]
+I (78905) EPaperQr: Display text using GoogleSans140
+I (79911) MasterProtocol: Complete text payload: 48 [hex: 34 38 ]
+I (79914) EPaperQr: Display text using GoogleSans140
+I (80915) MasterProtocol: Complete text payload: 47 [hex: 34 37 ]
+I (80918) EPaperQr: Display text using GoogleSans140
+I (81919) MasterProtocol: Complete text payload: 46 [hex: 34 36 ]
+I (81922) EPaperQr: Display text using GoogleSans140
+I (82928) MasterProtocol: Complete text payload: 45 [hex: 34 35 ]
+I (82931) EPaperQr: Display text using GoogleSans140
+I (83322) EPaperQr: Main loop heartbeat
