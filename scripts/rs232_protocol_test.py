@@ -252,7 +252,7 @@ def set_command_state(state: dict, mode: str) -> None:
         state["prompt_text"] = "Inserisci testo (usa \\n per CR)"
         state["status"] = "Testo auto"
     elif mode == "e":
-        state["prompt_text"] = "Font 1-6 [4]"
+        state["prompt_text"] = "Font 1-8 [4] (7=GS100, 8=GS140 solo cifre)"
         state["status"] = "Testo esteso"
     elif mode == "l":
         state["prompt_text"] = "LED1 r,g,b [0,0,0]"
@@ -275,7 +275,8 @@ def process_active_input(
     log_lines: List[str],
     exec_log: BinaryIO | None = None,
 ) -> None:
-    value = state["input_line"].strip().lower()
+    value_raw = state["input_line"].strip()
+    value = value_raw.lower()
     mode = state["mode"]
     step = state["step"]
 
@@ -336,7 +337,7 @@ def process_active_input(
         complete_command(state)
         return
     if mode == "t":
-        payload = normalize_text(value)
+        payload = normalize_text(value_raw)
         if len(payload) > 0xFE:
             payload = payload[:0xFE]
             state["status"] = "Testo troncato a 254 byte"
@@ -357,10 +358,10 @@ def process_active_input(
         if step == 0:
             if value == "":
                 font = 4
-            elif value.isdigit() and 1 <= int(value) <= 6:
+            elif value.isdigit() and 1 <= int(value) <= 8:
                 font = int(value)
             else:
-                state["status"] = "Font non valido, inserisci 1-6"
+                state["status"] = "Font non valido, inserisci 1-8"
                 return
             state["ctx"]["font"] = font
             state["step"] = 1
@@ -385,7 +386,7 @@ def process_active_input(
             state["input_line"] = ""
             return
         if step == 2:
-            payload = normalize_text(value)
+            payload = normalize_text(value_raw)
             if len(payload) > 250:
                 payload = payload[:250]
                 state["status"] = "Testo troncato a 250 byte"
@@ -532,11 +533,11 @@ def text_auto_menu(ser: serial.Serial) -> None:
 def text_extended_menu(ser: serial.Serial) -> None:
     print("\n-- Test testo esteso con font e posizione (0x01 0xFF ...) --")
     while True:
-        font_str = input("Scegli font da 1 a 6 [default 4]: ").strip()
+        font_str = input("Scegli font da 1 a 8 [default 4] (7=GS100, 8=GS140 solo cifre): ").strip()
         if font_str == "":
             font = 4
             break
-        if font_str.isdigit() and 1 <= int(font_str) <= 6:
+        if font_str.isdigit() and 1 <= int(font_str) <= 8:
             font = int(font_str)
             break
         print("Valore non valido, inserisci 1-6.")

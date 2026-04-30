@@ -1245,97 +1245,58 @@ static std::string normalizeText(const std::string &text)
 
 static std::vector<std::string> wrapText(const std::string &text, const FontDefinition &fontDef)
 {
-    std::vector<std::string> lines;
-    std::string currentLine;
-    std::string token;
-    for (size_t i = 0; i <= text.length(); ++i)
-    {
-        char c = i < text.length() ? text[i] : ' ';
-        if (c == '\n')
-        {
-            if (!token.empty())
-            {
-                if (!currentLine.empty())
-                {
-                    if (currentLine.length() + 1 + token.length() <= fontDef.maxCharsPerLine)
-                    {
-                        currentLine += ' ';
-                        currentLine += token;
-                    }
-                    else
-                    {
-                        lines.push_back(currentLine);
-                        currentLine = token;
-                    }
-                }
-                else
-                {
-                    currentLine = token;
-                }
-                token.clear();
-            }
-            lines.push_back(currentLine);
-            currentLine.clear();
-        }
-        else if (c == ' ' || i == text.length())
-        {
-            if (!token.empty())
-            {
-                if (!currentLine.empty())
-                {
-                    if (currentLine.length() + 1 + token.length() <= fontDef.maxCharsPerLine)
-                    {
-                        currentLine += ' ';
-                        currentLine += token;
-                    }
-                    else
-                    {
-                        lines.push_back(currentLine);
-                        currentLine = token;
-                    }
-                }
-                else
-                {
-                    currentLine = token;
-                }
-                token.clear();
-            }
-            if (i == text.length())
-            {
-                break;
-            }
-        }
-        else
-        {
-            token.push_back(c);
-            if (token.length() > fontDef.maxCharsPerLine)
-            {
-                if (!currentLine.empty())
-                {
-                    lines.push_back(currentLine);
-                    currentLine.clear();
-                }
-                while (token.length() > fontDef.maxCharsPerLine)
-                {
-                    lines.push_back(token.substr(0, fontDef.maxCharsPerLine));
-                    token.erase(0, fontDef.maxCharsPerLine);
-                }
-                if (!token.empty())
-                {
-                    currentLine = token;
-                    token.clear();
-                }
-            }
-        }
-        if (currentLine.length() > fontDef.maxCharsPerLine)
-        {
-            lines.push_back(currentLine.substr(0, fontDef.maxCharsPerLine));
-            currentLine.erase(0, fontDef.maxCharsPerLine);
+    // Tokenize: alphanumeric sequences (words) and individual non-alnum non-whitespace chars (punct).
+    // Words are never split. Punct chars are natural split points (no space added around them).
+    struct Token { std::string str; bool isWord; };
+    std::vector<Token> tokens;
+    std::string cur;
+
+    auto isAlnum = [](unsigned char c) -> bool {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9');
+    };
+    auto flushWord = [&]() {
+        if (!cur.empty()) { tokens.push_back({cur, true}); cur.clear(); }
+    };
+
+    for (char ch : text) {
+        if (ch == '\n') {
+            flushWord();
+            tokens.push_back({"", false}); // newline sentinel
+        } else if (ch == ' ') {
+            flushWord();
+        } else if (isAlnum((unsigned char)ch)) {
+            cur.push_back(ch);
+        } else {
+            // punct: flush current word, emit punct as its own token
+            flushWord();
+            tokens.push_back({{ch}, false});
         }
     }
-    if (!currentLine.empty() || lines.empty())
-    {
-        lines.push_back(currentLine);
+    flushWord();
+
+    // Build lines: a space is inserted before a word only when the last written char is alphanumeric.
+    std::vector<std::string> lines;
+    std::string line;
+
+    for (const auto &tok : tokens) {
+        if (!tok.isWord && tok.str.empty()) {
+            // Newline sentinel
+            lines.push_back(line);
+            line.clear();
+            continue;
+        }
+        bool needSpace = tok.isWord && !line.empty() && isAlnum((unsigned char)line.back());
+        size_t addLen = (needSpace ? 1 : 0) + tok.str.length();
+        if (!line.empty() && line.length() + addLen > fontDef.maxCharsPerLine) {
+            lines.push_back(line);
+            line = tok.str;
+        } else {
+            if (needSpace) line += ' ';
+            line += tok.str;
+        }
+    }
+    if (!line.empty() || lines.empty()) {
+        lines.push_back(line);
     }
     return lines;
 }
@@ -1357,7 +1318,13 @@ static std::string joinLines(const std::vector<std::string> &lines)
 static bool fitsInFont(const std::string &text, const FontDefinition &fontDef)
 {
     auto lines = wrapText(text, fontDef);
-    return lines.size() <= fontDef.maxLines;
+    if (lines.size() > fontDef.maxLines)
+        return false;
+    // A word longer than maxCharsPerLine means font is too large
+    for (const auto &line : lines)
+        if (line.length() > fontDef.maxCharsPerLine)
+            return false;
+    return true;
 }
 
 static std::string truncateText(const std::string &text, const FontDefinition &fontDef)
@@ -1388,7 +1355,8 @@ static uint8_t selectFontIndex(const std::string &text)
     std::vector<uint8_t> candidates;
     if (numeric)
     {
-        candidates = {0, 1, 2, 3, 4, 5};
+        // Largest to smallest: GoogleSans140(7), GoogleSans100(6), then Montserrat descending
+        candidates = {7, 6, 0, 1, 2, 3, 4, 5};
     }
     else
     {
@@ -1467,7 +1435,8 @@ void setDisplayTheme(bool inverted)
             lv_obj_set_style_bg_color(display_label, themeBg(), LV_PART_MAIN);
             lv_obj_set_style_text_color(display_label, themeText(), LV_PART_MAIN);
         }
-        lv_obj_invalidate(screen);
+        // No lv_obj_invalidate: theme takes effect on next displayText() call.
+        // Forcing a flush here risks triggering an EPD refresh while the panel may be busy.
     }
     ESP_LOGI(TAG, "Display theme: %s", inverted ? "inverted (black bg/white text)" : "normal (white bg/black text)");
 #endif
@@ -1657,30 +1626,33 @@ void displayText(const std::string &raw_text)
 
 void displayText(const std::string &raw_text, uint8_t fontNumber, uint8_t x, uint8_t y)
 {
-    if (display_label == nullptr)
-    {
-        lv_obj_t *screen = lv_scr_act();
-        if (screen == nullptr) { ESP_LOGW(TAG, "displayText ext: no active screen"); return; }
-        display_label = lv_label_create(screen);
-        lv_label_set_long_mode(display_label, LV_LABEL_LONG_WRAP);
-        lv_obj_set_style_text_color(display_label, themeText(), LV_PART_MAIN);
-        lv_obj_set_style_text_align(display_label, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
-        lv_obj_set_style_bg_color(display_label, themeBg(), LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(display_label, LV_OPA_COVER, LV_PART_MAIN);
-    }
+    lv_obj_t *screen = lv_scr_act();
+    if (screen == nullptr) { ESP_LOGW(TAG, "displayText ext: no active screen"); return; }
+
+    // Always create a new label so previous extended labels remain visible.
+    // clearActiveScreen() (triggered by § or CMD_DISPLAY_REFRESH) removes all of them.
+    lv_obj_t *label = lv_label_create(screen);
+    lv_obj_set_style_text_color(label, themeText(), LV_PART_MAIN);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(label, themeBg(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(label, LV_OPA_TRANSP, LV_PART_MAIN); // transparent bg: don't overwrite existing content
+
     const std::string normalized = normalizeText(raw_text);
     const uint8_t fontIndex = resolveExtendedFontIndex(fontNumber);
     const auto &fontDef = fontDefinitions[fontIndex];
-    const std::string output = normalized;
-    const int32_t width = static_cast<int32_t>(EPD_WIDTH) - x;
-    lv_obj_set_style_text_font(display_label, fontDef.font, LV_PART_MAIN);
-    lv_label_set_text(display_label, output.c_str());
-    lv_obj_set_width(display_label, width > 0 ? width : LV_SIZE_CONTENT);
-    // Center text on (x,y): use LV_ALIGN_CENTER with offset relative to screen center (EPD_WIDTH/2, EPD_HEIGHT/2)
-    lv_obj_align(display_label, LV_ALIGN_CENTER,
-                 static_cast<int32_t>(x) - EPD_WIDTH / 2,
+    // Use LVGL pixel-accurate wrapping across the full display width.
+    // wrapText() is char-count based and would incorrectly split words in proportional fonts.
+    lv_obj_set_width(label, EPD_WIDTH);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_font(label, fontDef.font, LV_PART_MAIN);
+    lv_label_set_text(label, normalized.c_str());
+    lv_obj_align(label, LV_ALIGN_CENTER,
+                 0,
                  static_cast<int32_t>(y) - EPD_HEIGHT / 2);
-    ESP_LOGI(TAG, "Extended display text font#%u center=(%u,%u) len=%u", fontNumber, x, y, static_cast<unsigned>(output.length()));
+
+    // Track last label so callers can still reference it if needed
+    display_label = label;
+    ESP_LOGI(TAG, "Extended display text font#%u center=(%u,%u) len=%u", fontNumber, x, y, static_cast<unsigned>(normalized.length()));
 }
 
 void displayJpegCentered(const char *path)
@@ -1778,32 +1750,6 @@ void buildUi()
     lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, LV_PART_MAIN);
 
     showLogoTest();
-
-    // lv_obj_t *logo = lv_img_create(screen);
-    // lv_img_set_src(logo, &logo_img);
-    // lv_obj_set_style_img_recolor(logo, lv_color_black(), LV_PART_MAIN);
-    // lv_obj_set_style_img_recolor_opa(logo, LV_OPA_COVER, LV_PART_MAIN);
-    // lv_obj_align(logo, LV_ALIGN_TOP_MID, 0, 5);
-
-    display_label = lv_label_create(screen);
-    lv_obj_set_width(display_label, EPD_WIDTH);
-    lv_label_set_long_mode(display_label, LV_LABEL_LONG_WRAP);
-    lv_obj_set_style_text_color(display_label, lv_color_black(), LV_PART_MAIN);
-    lv_obj_set_style_text_font(display_label, &lv_font_montserrat_28, LV_PART_MAIN);
-    lv_obj_set_style_text_align(display_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(display_label, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(display_label, LV_OPA_COVER, LV_PART_MAIN);
-    lv_label_set_text(display_label, "Ready");
-    lv_obj_align(display_label, LV_ALIGN_TOP_MID, 0, 60);
-
-    // fontLoopButton = lv_btn_create(screen);
-    // lv_obj_set_size(fontLoopButton, 180, 40);
-    // lv_obj_align(fontLoopButton, LV_ALIGN_BOTTOM_MID, 0, -10);
-    // lv_obj_add_event_cb(fontLoopButton, fontLoopBtnEventCb, LV_EVENT_CLICKED, nullptr);
-
-    // lv_obj_t *btn_label = lv_label_create(fontLoopButton);
-    // lv_label_set_text(btn_label, "Start menu 4 loop");
-    // lv_obj_center(btn_label);
 }
 
 #else

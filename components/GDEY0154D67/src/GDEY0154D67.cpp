@@ -203,6 +203,7 @@ static void epdRefresh()
     sendEpdCommand(0x22);
     sendEpdData(0xD7); // fast full update sequence
     sendEpdCommand(0x20);
+    vTaskDelay(pdMS_TO_TICKS(5)); // allow SSD1681 to assert BUSY before polling
     waitUntilIdle();
 }
 
@@ -211,6 +212,7 @@ static void epdRefreshPartial()
     sendEpdCommand(0x22);
     sendEpdData(0xFC); // partial update sequence
     sendEpdCommand(0x20);
+    vTaskDelay(pdMS_TO_TICKS(5)); // allow SSD1681 to assert BUSY before polling
     waitUntilIdle();
 }
 
