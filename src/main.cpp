@@ -25,16 +25,35 @@
 #define ENABLE_DISPLAY_LVGL 1
 #endif
 
+
+//#define ENABLE_DISPLAY_TEST
+
+
 #include "pin_config.h"
 #include "display.h"
+#if ENABLE_DISPLAY_LVGL
+#include <lvgl.h>
+#include "ui/fonts/user_fonts.h"
+extern "C" const lv_img_dsc_t logo_img;
+#endif
 #include "GDEY0154D67.h"
 #include "led_control.h"
 #include "scanner_control.h"
 #include "master_protocol.h"
 #if ENABLE_DISPLAY_LVGL
-#include "lv_conf.h"
-#include <lvgl.h>
 static lv_obj_t *display_label = nullptr;
+static lv_obj_t *fontLoopButton = nullptr;
+static lv_obj_t *fontLoopLabel = nullptr;
+static TaskHandle_t displayTestTaskHandle = nullptr;
+static TaskHandle_t fontLoopTaskHandle = nullptr;
+static bool fontLoopRunning = false;
+static void drawCheckerboard();
+static void drawSplitScreen(bool leftWhite);
+static void showTextInFonts();
+static void showLogoTest();
+static const lv_img_dsc_t *getInvertedLogoImg();
+static void fontLoopTask(void *pvParameter);
+static void performDisplayTestSequence();
 #endif
 
 #define LOG_TAG "EPaperQr"
@@ -504,6 +523,7 @@ static void lvglDelayAndRefresh(TickType_t delayTicks)
     const TickType_t end = xTaskGetTickCount() + delayTicks;
     while (xTaskGetTickCount() < end)
     {
+        lv_tick_inc(10);
         lv_timer_handler();
         vTaskDelay(pdMS_TO_TICKS(10));
     }
@@ -514,8 +534,79 @@ static void lvglDelayAndRefresh(TickType_t delayTicks)
 
 static void waitForBootButtonPress()
 {
-    ESP_LOGI(TAG, "[M] waiting 10 seconds before next display step");
-    lvglDelayAndRefresh(pdMS_TO_TICKS(10000));
+    ESP_LOGI(TAG, "[M] waiting 5 seconds before next display step");
+    lvglDelayAndRefresh(pdMS_TO_TICKS(5000));
+}
+
+static void fontLoopBtnEventCb(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    fontLoopRunning = !fontLoopRunning;
+    if (fontLoopRunning && fontLoopTaskHandle == nullptr)
+    {
+        xTaskCreate(fontLoopTask, "fontLoop", 4096, nullptr, 5, &fontLoopTaskHandle);
+    }
+    if (fontLoopButton)
+    {
+        lv_obj_t *label = lv_obj_get_child(fontLoopButton, 0);
+        if (label)
+        {
+            lv_label_set_text(label, fontLoopRunning ? "Stop menu 4 loop" : "Start menu 4 loop");
+        }
+    }
+}
+
+static void fontLoopTask(void *pvParameter)
+{
+    (void)pvParameter;
+    static const struct FontEntry { const char *name; const lv_font_t *font; } fonts[] = {
+        {"Montserrat 14", &lv_font_montserrat_14},
+        {"Montserrat 28", &lv_font_montserrat_28},
+        {"Montserrat 48", &lv_font_montserrat_48},
+        {"GoogleSans 10", &GoogleSans10},
+        {"GoogleSans 15", &GoogleSans15},
+        {"GoogleSans 20", &GoogleSans20},
+        {"GoogleSans 35", &GoogleSans35},
+        {"GoogleSans 50", &GoogleSans50},
+        {"GoogleSans 60", &GoogleSans60},
+        {"GoogleSans 100", &GoogleSans100},
+        {"GoogleSans 140", &GoogleSans140},
+    };
+    size_t index = 0;
+    while (fontLoopRunning)
+    {
+        if (fontLoopLabel)
+        {
+            lv_obj_del(fontLoopLabel);
+            fontLoopLabel = nullptr;
+        }
+        lv_obj_t *screen = lv_scr_act();
+        fontLoopLabel = lv_label_create(screen);
+        lv_obj_set_style_text_color(fontLoopLabel, lv_color_black(), LV_PART_MAIN);
+        lv_obj_set_style_text_font(fontLoopLabel, fonts[index].font, LV_PART_MAIN);
+        lv_label_set_text_fmt(fontLoopLabel, "%s 123", fonts[index].name);
+        lv_obj_center(fontLoopLabel);
+        index = (index + 1) % (sizeof(fonts) / sizeof(fonts[0]));
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+    fontLoopTaskHandle = nullptr;
+    vTaskDelete(NULL);
+}
+
+static void displayTestTask(void *pvParameter)
+{
+    (void)pvParameter;
+    performDisplayTestSequence();
+    displayTestTaskHandle = nullptr;
+    vTaskDelete(NULL);
+}
+
+static void startDisplayTestTask()
+{
+    if (displayTestTaskHandle == nullptr)
+    {
+        xTaskCreate(displayTestTask, "displayTest", 8192, nullptr, 5, &displayTestTaskHandle);
+    }
 }
 
 static void performDisplayTestSequence()
@@ -525,42 +616,30 @@ static void performDisplayTestSequence()
         ESP_LOGW(TAG, "[M] display test skipped: epaper not initialized");
         return;
     }
-    initBootButton();
-    while (1)
-    {
-        ESP_LOGI(TAG, "[M] display test 1/5: full refresh current display");
-        epdFullRefresh();
-        ESP_LOGI(TAG, "[M] display test paused, waiting 10 seconds");
-        waitForBootButtonPress();
 
-        ESP_LOGI(TAG, "[M] display test 2/5: clean screen");
-        clearDisplay();
-        ESP_LOGI(TAG, "[M] display test paused, waiting 10 seconds");
-        waitForBootButtonPress();
+    ESP_LOGI(TAG, "[M] display test 1/5: full refresh current display");
+    epdFullRefresh();
+    ESP_LOGI(TAG, "[M] display test 1/5: draw checkerboard");
+    drawCheckerboard();
+    lvglDelayAndRefresh(pdMS_TO_TICKS(10000));
 
-        ESP_LOGI(TAG, "[M] display test 3/5: full black screen");
-        epdBlackScreen();
-        ESP_LOGI(TAG, "[M] display test paused, waiting 10 seconds");
-        waitForBootButtonPress();
+    ESP_LOGI(TAG, "[M] display test 2/5: draw half screen white/black");
+    drawSplitScreen(true);
+    lvglDelayAndRefresh(pdMS_TO_TICKS(10000));
 
-        ESP_LOGI(TAG, "[M] display test 4/5: show text '123'");
-#if ENABLE_DISPLAY_LVGL
-        if (display_label)
-        {
-            lv_obj_set_style_text_font(display_label, &lv_font_montserrat_28, LV_PART_MAIN);
-            lv_label_set_text(display_label, "123");
-            lv_obj_align(display_label, LV_ALIGN_CENTER, 0, 0);
-        }
-#endif
-        ESP_LOGI(TAG, "[M] display test paused, waiting 10 seconds");
-        waitForBootButtonPress();
+    ESP_LOGI(TAG, "[M] display test 3/5: draw half screen black/white");
+    drawSplitScreen(false);
+    lvglDelayAndRefresh(pdMS_TO_TICKS(10000));
 
-        ESP_LOGI(TAG, "[M] display test 5/5: show logo");
-#if ENABLE_DISPLAY_LVGL
-        displayJpegCentered("/spiffs/logo_n.jpg");
-#endif
-        ESP_LOGI(TAG, "[M] display test complete");
-    }
+    ESP_LOGI(TAG, "[M] display test 4/5: show text '123' in three fonts");
+    showTextInFonts();
+    lvglDelayAndRefresh(pdMS_TO_TICKS(10000));
+
+    ESP_LOGI(TAG, "[M] display test 5/5: show logo");
+    showLogoTest();
+    lvglDelayAndRefresh(pdMS_TO_TICKS(10000));
+
+    ESP_LOGI(TAG, "[M] display test complete");
 }
 
 #if defined(SCANNER_CONTROL_USE_SERIAL)
@@ -1331,17 +1410,152 @@ static uint8_t resolveExtendedFontIndex(uint8_t fontNumber)
     }
 }
 
+static void clearActiveScreen()
+{
+#if ENABLE_DISPLAY_LVGL
+    lv_obj_t *screen = lv_scr_act();
+    if (screen != nullptr)
+    {
+        lv_obj_clean(screen);
+        lv_obj_set_style_bg_color(screen, lv_color_white(), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, LV_PART_MAIN);
+    }
+#endif
+}
+
 void clearDisplay()
 {
     if (GDEY0154D67_is_initialized())
     {
         GDEY0154D67_clear_screen();
     }
-    if (display_label)
+#if ENABLE_DISPLAY_LVGL
+    clearActiveScreen();
+#endif
+}
+
+static void drawCheckerboard()
+{
+#if ENABLE_DISPLAY_LVGL
+    clearActiveScreen();
+    lv_obj_t *screen = lv_scr_act();
+    const int width = EPD_WIDTH;
+    const int height = EPD_HEIGHT;
+    static lv_color_t *canvas_buf = nullptr;
+    if (canvas_buf == nullptr)
     {
-        lv_label_set_text(display_label, "");
-        lv_obj_align(display_label, LV_ALIGN_CENTER, 0, 0);
+        canvas_buf = static_cast<lv_color_t *>(malloc(sizeof(lv_color_t) * width * height));
+        if (canvas_buf == nullptr)
+        {
+            ESP_LOGW(TAG, "Failed to allocate checkerboard canvas buffer");
+            return;
+        }
     }
+
+    lv_obj_t *canvas = lv_canvas_create(screen);
+    lv_canvas_set_buffer(canvas, canvas_buf, width, height, LV_IMG_CF_TRUE_COLOR);
+    lv_canvas_fill_bg(canvas, lv_color_white(), LV_OPA_COVER);
+
+    lv_draw_rect_dsc_t rect_dsc;
+    lv_draw_rect_dsc_init(&rect_dsc);
+    rect_dsc.bg_opa = LV_OPA_COVER;
+    const int squareSize = 20;
+    for (int row = 0; row < height / squareSize; ++row)
+    {
+        for (int col = 0; col < width / squareSize; ++col)
+        {
+            rect_dsc.bg_color = ((row + col) & 1) ? lv_color_black() : lv_color_white();
+            lv_canvas_draw_rect(canvas, col * squareSize, row * squareSize, squareSize, squareSize, &rect_dsc);
+        }
+    }
+    lv_obj_center(canvas);
+#endif
+}
+
+static void drawSplitScreen(bool leftWhite)
+{
+#if ENABLE_DISPLAY_LVGL
+    clearActiveScreen();
+    lv_obj_t *screen = lv_scr_act();
+
+    lv_obj_t *left = lv_obj_create(screen);
+    lv_obj_set_size(left, EPD_WIDTH / 2, EPD_HEIGHT);
+    lv_obj_set_style_border_width(left, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(left, 0, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(left, leftWhite ? lv_color_white() : lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(left, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_pos(left, 0, 0);
+
+    lv_obj_t *right = lv_obj_create(screen);
+    lv_obj_set_size(right, EPD_WIDTH - EPD_WIDTH / 2, EPD_HEIGHT);
+    lv_obj_set_style_border_width(right, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(right, 0, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(right, leftWhite ? lv_color_black() : lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(right, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_pos(right, EPD_WIDTH / 2, 0);
+#endif
+}
+
+static void showTextInFonts()
+{
+#if ENABLE_DISPLAY_LVGL
+    clearActiveScreen();
+    lv_obj_t *screen = lv_scr_act();
+    struct FontLine { const lv_font_t *font; int32_t y; } lines[] = {
+        {LV_FONT_DEFAULT, 8},
+        {&lv_font_montserrat_14, 40},
+        {&lv_font_montserrat_28, 80},
+        {&lv_font_montserrat_48, 125},
+    };
+    for (const FontLine &line : lines)
+    {
+        lv_obj_t *label = lv_label_create(screen);
+        lv_obj_set_style_text_font(label, line.font, LV_PART_MAIN);
+        lv_obj_set_style_text_color(label, lv_color_black(), LV_PART_MAIN);
+        lv_label_set_text(label, "123");
+        lv_obj_align(label, LV_ALIGN_TOP_MID, 0, line.y);
+    }
+#endif
+}
+
+static const lv_img_dsc_t *getInvertedLogoImg()
+{
+#if ENABLE_DISPLAY_LVGL
+    static bool initialized = false;
+    static lv_img_dsc_t inverted_logo = {};
+    static std::vector<uint8_t> inverted_data;
+
+    if(!initialized) {
+        const uint8_t *src_data = reinterpret_cast<const uint8_t *>(logo_img.data);
+        const size_t len = logo_img.data_size;
+        inverted_data.resize(len);
+        for(size_t i = 0; i < len; ++i) {
+            inverted_data[i] = static_cast<uint8_t>(~src_data[i]);
+        }
+        inverted_logo = logo_img;
+        inverted_logo.data = inverted_data.data();
+        initialized = true;
+    }
+    return &inverted_logo;
+#else
+    return nullptr;
+#endif
+}
+
+static void showLogoTest()
+{
+#if ENABLE_DISPLAY_LVGL
+    clearActiveScreen();
+    lv_obj_t *screen = lv_scr_act();
+    if(screen != nullptr) {
+        const lv_img_dsc_t *img = getInvertedLogoImg();
+        if(img != nullptr) {
+            lv_obj_t *image = lv_img_create(screen);
+            lv_img_set_src(image, img);
+            lv_obj_center(image);
+        }
+    }
+#endif
 }
 
 void setDisplayOrientation(DisplayOrientation orientation)
@@ -1408,10 +1622,18 @@ void displayJpegCentered(const char *path)
         return;
     }
 
+    lv_img_header_t info;
+    lv_res_t info_res = lv_img_decoder_get_info(path, &info);
+    if (info_res != LV_RES_OK)
+    {
+        ESP_LOGW(TAG, "displayJpegCentered failed to decode image: %s", path);
+        return;
+    }
+
     lv_obj_t *image = lv_img_create(screen);
     lv_img_set_src(image, path);
     lv_obj_center(image);
-    ESP_LOGI(TAG, "displayJpegCentered loaded image: %s", path);
+    ESP_LOGI(TAG, "displayJpegCentered loaded image: %s (%ux%u)", path, info.w, info.h);
 }
 
 void setupDisplay()
@@ -1438,7 +1660,7 @@ void setupLvgl()
     static lv_disp_drv_t *disp_drv = nullptr;
     if (lv_framebuffer == nullptr)
     {
-        lv_framebuffer = new lv_color_t[EPD_WIDTH * 40];
+        lv_framebuffer = new lv_color_t[EPD_WIDTH * EPD_HEIGHT];
         if (lv_framebuffer == nullptr)
         {
             _LOGE("Failed to allocate LVGL framebuffer");
@@ -1463,13 +1685,13 @@ void setupLvgl()
             return;
         }
     }
-    lv_disp_draw_buf_init(draw_buf, lv_framebuffer, nullptr, EPD_WIDTH * 40);
+    lv_disp_draw_buf_init(draw_buf, lv_framebuffer, nullptr, EPD_WIDTH * EPD_HEIGHT);
     lv_disp_drv_init(disp_drv);
     disp_drv->hor_res = EPD_WIDTH;
     disp_drv->ver_res = EPD_HEIGHT;
     disp_drv->flush_cb = epd_flush_cb;
     disp_drv->draw_buf = draw_buf;
-    disp_drv->full_refresh = 0;
+    disp_drv->full_refresh = 0; // allow LVGL partial refresh based on invalidated regions
     lv_disp_drv_register(disp_drv);
 }
 
@@ -1479,15 +1701,30 @@ void buildUi()
     lv_obj_set_style_bg_color(screen, lv_color_white(), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, LV_PART_MAIN);
 
-    display_label = lv_label_create(screen);
-    lv_obj_set_width(display_label, EPD_WIDTH);
-    lv_label_set_long_mode(display_label, LV_LABEL_LONG_WRAP);
-    lv_obj_set_style_text_color(display_label, lv_color_black(), LV_PART_MAIN);
-    lv_obj_set_style_text_font(display_label, &lv_font_montserrat_28, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(display_label, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(display_label, LV_OPA_COVER, LV_PART_MAIN);
-    lv_label_set_text(display_label, "Ready");
-    lv_obj_align(display_label, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_t *logo = lv_img_create(screen);
+    lv_img_set_src(logo, &logo_img);
+    lv_obj_set_style_img_recolor(logo, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_img_recolor_opa(logo, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_align(logo, LV_ALIGN_TOP_MID, 0, 5);
+
+    // display_label = lv_label_create(screen);
+    // lv_obj_set_width(display_label, EPD_WIDTH);
+    // lv_label_set_long_mode(display_label, LV_LABEL_LONG_WRAP);
+    // lv_obj_set_style_text_color(display_label, lv_color_black(), LV_PART_MAIN);
+    // lv_obj_set_style_text_font(display_label, &lv_font_montserrat_28, LV_PART_MAIN);
+    // lv_obj_set_style_bg_color(display_label, lv_color_white(), LV_PART_MAIN);
+    // lv_obj_set_style_bg_opa(display_label, LV_OPA_COVER, LV_PART_MAIN);
+    // lv_label_set_text(display_label, "Ready");
+    // lv_obj_align(display_label, LV_ALIGN_TOP_MID, 0, 60);
+
+    // fontLoopButton = lv_btn_create(screen);
+    // lv_obj_set_size(fontLoopButton, 180, 40);
+    // lv_obj_align(fontLoopButton, LV_ALIGN_BOTTOM_MID, 0, -10);
+    // lv_obj_add_event_cb(fontLoopButton, fontLoopBtnEventCb, LV_EVENT_CLICKED, nullptr);
+
+    // lv_obj_t *btn_label = lv_label_create(fontLoopButton);
+    // lv_label_set_text(btn_label, "Start menu 4 loop");
+    // lv_obj_center(btn_label);
 }
 
 #else
@@ -1551,8 +1788,10 @@ extern "C" void app_main()
     setupLvgl();
     ESP_LOGI(TAG, "[M] init step: UI");
     buildUi();
+#ifdef ENABLE_DISPLAY_TEST 
     ESP_LOGI(TAG, "[M] init step: display test sequence");
-    performDisplayTestSequence();
+    startDisplayTestTask();
+#endif    
 #else
     ESP_LOGI(TAG, "[M] init step: display/LVGL skipped (ENABLE_DISPLAY_LVGL=0)");
 #endif
@@ -1609,6 +1848,7 @@ extern "C" void app_main()
         }
 #endif
 #if ENABLE_DISPLAY_LVGL
+        lv_tick_inc(5);
         lv_timer_handler();
 #endif
         vTaskDelay(pdMS_TO_TICKS(5));

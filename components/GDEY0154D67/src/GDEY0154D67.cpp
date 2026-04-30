@@ -13,7 +13,7 @@ static bool epdInitialized = false;
 static GDEY0154D67_Orientation currentOrientation = GDEY0154D67_Orientation::ORIENTATION_0;
 static constexpr uint16_t PANEL_WIDTH = 200;
 static constexpr uint16_t PANEL_HEIGHT = 200;
-static constexpr int EPD_BUSY_ACTIVE_LEVEL = 0;
+static constexpr int EPD_BUSY_ACTIVE_LEVEL = 0; // SSD1681: LOW when busy, HIGH when ready (GxEPD2: wait while pin != HIGH)
 static const uint32_t EPD_BUSY_TIMEOUT_MS = 15000;
 
 static void configureOutputPin(gpio_num_t pin)
@@ -154,6 +154,8 @@ static void epdPowerOn()
 
 static void setEpdRamArea(uint8_t xStart, uint8_t xEnd, uint16_t yStart, uint16_t yEnd)
 {
+    sendEpdCommand(0x11); // data entry mode: x-increase, y-increase
+    sendEpdData(0x03);
     sendEpdCommand(0x44);
     sendEpdData(xStart);
     sendEpdData(xEnd);
@@ -180,16 +182,31 @@ static void writeEpdRam(uint8_t command, uint8_t value)
     setEpdRamPointer(0x00, 0x0000);
     sendEpdCommand(command);
     const size_t length = (static_cast<size_t>(PANEL_WIDTH) * PANEL_HEIGHT) / 8;
-    for (size_t i = 0; i < length; ++i)
+    // Send all data in ONE SPI transaction (CS held low throughout, as required by SSD1681)
+    uint8_t *buf = static_cast<uint8_t *>(malloc(length));
+    if (buf == nullptr)
     {
-        sendEpdData(value);
+        ESP_LOGE(TAG, "writeEpdRam alloc failed");
+        return;
     }
+    memset(buf, value, length);
+    gpio_set_level(static_cast<gpio_num_t>(PIN_EPD_DC_CFG), 1);
+    epdTransmit(buf, length);
+    free(buf);
 }
 
 static void epdRefresh()
 {
     sendEpdCommand(0x22);
-    sendEpdData(0xF7);
+    sendEpdData(0xF7); // full update sequence
+    sendEpdCommand(0x20);
+    waitUntilIdle();
+}
+
+static void epdRefreshPartial()
+{
+    sendEpdCommand(0x22);
+    sendEpdData(0xFC); // partial update sequence
     sendEpdCommand(0x20);
     waitUntilIdle();
 }
@@ -205,88 +222,24 @@ static void setPartialWindow(int x1, int y1, int x2, int y2)
 
 static bool epdInitSequence()
 {
-    sendEpdCommand(0x12);
-    waitUntilIdle();
+    // SSD1681 init sequence (matches GxEPD2_154_GDEY0154D67)
+    sendEpdCommand(0x12); // soft reset
+    vTaskDelay(pdMS_TO_TICKS(10));
 
-    sendEpdCommand(0x4D);
-    sendEpdData(0x78);
-
-    sendEpdCommand(0x00);
-    sendEpdData(0x0F);
-    sendEpdData(0x29);
-
-    sendEpdCommand(0x01);
-    sendEpdData(0x07);
-    sendEpdData(0x00);
-
-    sendEpdCommand(0x03);
-    sendEpdData(0x10);
-    sendEpdData(0x54);
-    sendEpdData(0x44);
-
-    sendEpdCommand(0x06);
-    sendEpdData(0x05);
-    sendEpdData(0x00);
-    sendEpdData(0x3F);
-    sendEpdData(0x0A);
-    sendEpdData(0x25);
-    sendEpdData(0x12);
-    sendEpdData(0x1A);
-
-    sendEpdCommand(0x50);
-    sendEpdData(0x37);
-
-    sendEpdCommand(0x60);
-    sendEpdData(0x02);
-    sendEpdData(0x02);
-
-    sendEpdCommand(0x61);
-    sendEpdData(static_cast<uint8_t>(PANEL_WIDTH / 256));
-    sendEpdData(static_cast<uint8_t>(PANEL_WIDTH % 256));
-    sendEpdData(static_cast<uint8_t>(PANEL_HEIGHT / 256));
-    sendEpdData(static_cast<uint8_t>(PANEL_HEIGHT % 256));
-
-    sendEpdCommand(0xE7);
-    sendEpdData(0x1C);
-
-    sendEpdCommand(0xE3);
-    sendEpdData(0x22);
-
-    sendEpdCommand(0xB4);
-    sendEpdData(0xD0);
-    sendEpdCommand(0xB5);
-    sendEpdData(0x03);
-
-    sendEpdCommand(0xE9);
-    sendEpdData(0x01);
-
-    sendEpdCommand(0x30);
-    sendEpdData(0x08);
-
-    sendEpdCommand(0x04);
-    waitUntilIdle();
-
-    sendEpdCommand(0x01);
+    sendEpdCommand(0x01); // Driver output control
     sendEpdData(0xC7);
     sendEpdData(0x00);
-    sendEpdData(0x01);
+    sendEpdData(0x00);
 
-    sendEpdCommand(0x11);
-    sendEpdData(0x01);
-
-    setEpdRamArea(0x00, 0x18, 0x0000, 0x00C7);
-
-    sendEpdCommand(0x3C);
+    sendEpdCommand(0x3C); // BorderWaveform
     sendEpdData(0x05);
 
-    sendEpdCommand(0x18);
+    sendEpdCommand(0x18); // Reading temperature sensor
     sendEpdData(0x80);
 
-    sendEpdCommand(0x4E);
-    sendEpdData(0x00);
-    sendEpdCommand(0x4F);
-    sendEpdData(0xC7);
-    sendEpdData(0x00);
+    // set full RAM area and reset pointer (also sends 0x11/0x03 data entry mode)
+    setEpdRamArea(0x00, 0x18, 0x0000, 0x00C7);
+    setEpdRamPointer(0x00, 0x0000);
 
     waitUntilIdle();
     return true;
@@ -413,19 +366,15 @@ bool GDEY0154D67_is_initialized()
 
 void GDEY0154D67_clear_screen()
 {
-    sendEpdCommand(0x11);
-    sendEpdData(0x01);
-    writeEpdRam(0x24, 0xFF);
-    writeEpdRam(0x26, 0x00);
+    writeEpdRam(0x26, 0xFF); // previous buffer = white
+    writeEpdRam(0x24, 0xFF); // current buffer = white
     epdRefresh();
 }
 
 void GDEY0154D67_black_screen()
 {
-    sendEpdCommand(0x11);
-    sendEpdData(0x01);
-    writeEpdRam(0x24, 0x00);
-    writeEpdRam(0x26, 0x00);
+    writeEpdRam(0x26, 0x00); // previous buffer = black
+    writeEpdRam(0x24, 0x00); // current buffer = black
     epdRefresh();
 }
 
@@ -491,28 +440,31 @@ void GDEY0154D67_draw_partial(const lv_area_t *area, lv_color_t *color_p)
     }
 
     createPartialImageBuffer(area, color_p, buffer, widthBytes, height, xMin, yMin);
+
+    // write new image to current buffer (0x24)
     setEpdRamArea(xStart, xEnd, static_cast<uint16_t>(yMin), static_cast<uint16_t>(yMax));
     setEpdRamPointer(xStart, static_cast<uint16_t>(yMin));
-
     sendEpdCommand(0x24);
-    for (int row = 0; row < height; ++row)
+    gpio_set_level(static_cast<gpio_num_t>(PIN_EPD_DC_CFG), 1);
+    epdTransmit(buffer, static_cast<size_t>(widthBytes) * static_cast<size_t>(height));
+
+    const bool full_screen_update = (xStart == 0 && xEnd == static_cast<uint8_t>((PANEL_WIDTH / 8) - 1) && yMin == 0 && yMax == static_cast<int>(PANEL_HEIGHT - 1));
+    if (full_screen_update)
     {
-        for (int byteIndex = 0; byteIndex < widthBytes; ++byteIndex)
-        {
-            sendEpdData(buffer[row * widthBytes + byteIndex]);
-        }
+        epdRefresh();
+    }
+    else
+    {
+        epdRefreshPartial();
     }
 
+    // Update previous buffer (0x26) to match current — keeps internal state for future updates
+    setEpdRamArea(xStart, xEnd, static_cast<uint16_t>(yMin), static_cast<uint16_t>(yMax));
+    setEpdRamPointer(xStart, static_cast<uint16_t>(yMin));
     sendEpdCommand(0x26);
-    for (int row = 0; row < height; ++row)
-    {
-        for (int byteIndex = 0; byteIndex < widthBytes; ++byteIndex)
-        {
-            sendEpdData(0x00);
-        }
-    }
+    gpio_set_level(static_cast<gpio_num_t>(PIN_EPD_DC_CFG), 1);
+    epdTransmit(buffer, static_cast<size_t>(widthBytes) * static_cast<size_t>(height));
 
     free(buffer);
-    epdRefresh();
 }
 #endif

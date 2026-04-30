@@ -391,7 +391,6 @@ lv_font_t GoogleSans60 = {
     .underline_position = -10,
     .underline_thickness = 5,
 #endif
-    .static_bitmap = 0,
     .dsc = &font_dsc,          /*The custom font data. Will be accessed by `get_glyph_bitmap/dsc` */
 #if LV_VERSION_CHECK(8, 2, 0) || LVGL_VERSION_MAJOR >= 9
     .fallback = &lv_font_montserrat_48,

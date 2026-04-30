@@ -79,6 +79,7 @@ Font pianificati:
 ## 6. Pacchetto `0x00`: comando
 
 I comandi hanno il formato:
+- `0x00`, `0xAA` → inizializza la connessione con il masteer: fino all'arrivo di questo pacchetto tutto ciò che arriva sulla seriale va ignorato
 - `0x00`, `0x00` → refresh totale del display
 - `0x00`, `0x01` → richiesta di attivazione dello scanner e refresh totale del display
 - `0x00`, `0x02` → scanner ON

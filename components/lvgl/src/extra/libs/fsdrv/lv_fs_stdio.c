@@ -102,6 +102,19 @@ void lv_fs_stdio_init(void)
  * @param mode read: FS_MODE_RD, write: FS_MODE_WR, both: FS_MODE_RD | FS_MODE_WR
  * @return pointer to FIL struct or NULL in case of fail
  */
+static const char * fs_normalize_path(const char * path)
+{
+    if(path == NULL) {
+        return NULL;
+    }
+
+    if(path[0] != '\0' && path[1] == ':' && (path[2] == '/' || path[2] == '\\')) {
+        return path + 2;
+    }
+
+    return path;
+}
+
 static void * fs_open(lv_fs_drv_t * drv, const char * path, lv_fs_mode_t mode)
 {
     LV_UNUSED(drv);
@@ -113,9 +126,10 @@ static void * fs_open(lv_fs_drv_t * drv, const char * path, lv_fs_mode_t mode)
     else if(mode == (LV_FS_MODE_WR | LV_FS_MODE_RD)) flags = "rb+";
 
     /*Make the path relative to the current directory (the projects root folder)*/
+    const char * normalized_path = fs_normalize_path(path);
 
     char buf[MAX_PATH_LEN];
-    lv_snprintf(buf, sizeof(buf), LV_FS_STDIO_PATH "%s", path);
+    lv_snprintf(buf, sizeof(buf), LV_FS_STDIO_PATH "%s", normalized_path);
 
     return fopen(buf, flags);
 }
@@ -209,8 +223,9 @@ static void * fs_dir_open(lv_fs_drv_t * drv, const char * path)
     dir_handle_t * handle = (dir_handle_t *)lv_mem_alloc(sizeof(dir_handle_t));
 #ifndef WIN32
     /*Make the path relative to the current directory (the projects root folder)*/
+    const char * normalized_path = fs_normalize_path(path);
     char buf[MAX_PATH_LEN];
-    lv_snprintf(buf, sizeof(buf), LV_FS_STDIO_PATH "%s", path);
+    lv_snprintf(buf, sizeof(buf), LV_FS_STDIO_PATH "%s", normalized_path);
     handle->dir_p = opendir(buf);
     if(handle->dir_p == NULL) {
         lv_mem_free(handle);
