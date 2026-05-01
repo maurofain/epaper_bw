@@ -30,13 +30,16 @@ mkdir -p "$OUTDIR"
 
 # Esegui Doxygen
 echo "Eseguo: doxygen $DOXYFILE"
-doxygen "$DOXYFILE"
+if ! doxygen "$DOXYFILE"; then
+    echo "Errore durante l'esecuzione di doxygen" >&2
+    exit 1
+fi
 
 # Copia solo i documenti approvati docs/**/a_*.md nella cartella markdown di output
 mkdir -p "$MD_OUTDIR"
 echo "Copio solo docs/**/a_*.md in $MD_OUTDIR"
 
-# Protezione anti-ricorsione: l'output e' sotto WORKDIR, quindi deve essere escluso esplicitamente.
+# Protezione anti-ricorsione: l'output è sotto WORKDIR, quindi deve essere escluso esplicitamente.
 if [[ "$REL_OUTDIR" == "$OUTDIR" || -z "$REL_OUTDIR" ]]; then
   echo "ERRORE: impossibile determinare REL_OUTDIR per escludere la directory di output" >&2
   exit 1
