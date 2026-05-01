@@ -15,6 +15,7 @@ void setupDisplay();
 void setupLvgl();
 void buildUi();
 void clearDisplay();
+void clearDisplayFull();  // Full refresh (slow, for c0 command only)
 void clearActiveScreen();  // Clear LVGL buffer only (no e-paper refresh)
 void fillDisplayWithDots();  // Fill display with white dots pattern
 void setDisplayTheme(bool inverted);

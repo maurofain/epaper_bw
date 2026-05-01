@@ -1436,6 +1436,18 @@ void clearDisplay()
     }
 }
 
+void clearDisplayFull()
+{
+#if ENABLE_DISPLAY_LVGL
+    clearActiveScreen();
+#endif
+    if (GDEY0154D67_is_initialized())
+    {
+        GDEY0154D67_clear_screen();
+        _LOGI("clearDisplayFull: LVGL buffer cleared + e-paper full refresh applied (slow)");
+    }
+}
+
 void fillDisplayWithDots()
 {
     // Fill e-paper display with dots pattern based on current theme

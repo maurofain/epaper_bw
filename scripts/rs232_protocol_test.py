@@ -254,59 +254,45 @@ def draw_windows(
     left_win.addstr(10, 4, "l - LED values")
     left_win.addstr(11, 4, "w - watch secondi")
     left_win.addstr(12, 4, "d - countdown (scegli font 1-12)")
-    left_win.addstr(12, 4, "q - esci")
-    left_win.addstr(16, 2, "Mods attivi: premi 'b' per toggle bold (ç)")
+    left_win.addstr(13, 4, "z - font demo (mostra tutti i font)")
+    left_win.addstr(14, 4, "q - esci")
+    
+    current_line = 16
     if state["mode"] == "c":
-        left_win.addstr(15, 2, "Comandi 0x00:")
-        left_win.addstr(16, 4, "0 - refresh totale")
-        left_win.addstr(17, 4, "1 - scanner ON + refresh")
-        left_win.addstr(18, 4, "2 - scanner ON")
-        left_win.addstr(19, 4, "3 - scanner OFF")
-        left_win.addstr(20, 4, "4 - tema normale (bianco/nero)")
-        left_win.addstr(21, 4, "5 - tema invertito (nero/bianco)")
-        left_win.addstr(22, 4, "b - reboot")
-        left_win.addstr(23, 4, "f - mostra logo")
-        status_line = 24
+        left_win.addstr(current_line, 2, "Comandi 0x00:")
+        left_win.addstr(current_line + 1, 4, "0 - refresh totale")
+        left_win.addstr(current_line + 2, 4, "1 - scanner ON + refresh")
+        left_win.addstr(current_line + 3, 4, "2 - scanner ON")
+        left_win.addstr(current_line + 4, 4, "3 - scanner OFF")
+        left_win.addstr(current_line + 5, 4, "4 - tema normale")
+        left_win.addstr(current_line + 6, 4, "5 - tema invertito")
+        left_win.addstr(current_line + 7, 4, "b - reboot")
+        left_win.addstr(current_line + 8, 4, "f - mostra logo")
+        status_line = current_line + 10
     elif state["mode"] == "a":
-        left_win.addstr(15, 2, "Font disponibili (15 totali):")
-        left_win.addstr(16, 2, "MONTSERRAT (piccolo→grande):")
-        left_win.addstr(17, 4, "1: Montserrat 14pt")
-        left_win.addstr(18, 4, "2: Montserrat 28pt")
-        left_win.addstr(19, 4, "3: Montserrat 48pt")
-        left_win.addstr(20, 2, "GOOGLE SANS (piccolo→grande):")
-        left_win.addstr(21, 4, "4: GoogleSans 10pt")
-        left_win.addstr(22, 4, "5: GoogleSans 15pt")
-        left_win.addstr(23, 4, "6: GoogleSans 20pt")
-        left_win.addstr(24, 4, "7: GoogleSans 35pt")
-        left_win.addstr(25, 4, "8: GoogleSans 50pt")
-        left_win.addstr(26, 4, "9: GoogleSans 60pt")
-        left_win.addstr(27, 4, "10: GoogleSans 100pt")
-        left_win.addstr(28, 4, "11: GoogleSans 140pt")
-        left_win.addstr(29, 2, "GOOGLE SANS BOLD (piccolo→grande):")
-        left_win.addstr(30, 4, "12: GoogleSansBold 40pt")
-        left_win.addstr(31, 4, "13: GoogleSansBold 60pt")
-        left_win.addstr(32, 4, "14: GoogleSansBold 100pt")
-        left_win.addstr(33, 4, "15: GoogleSansBold 140pt")
-        status_line = 35
-    elif state["mode"] == "w":
+        left_win.addstr(current_line, 2, "Font disponibili (15 totali):")
+        left_win.addstr(current_line + 1, 2, "MONTSERRAT: 1-3 | GOOGLE SANS: 4-11 | BOLD: 12-15")
+        status_line = current_line + 3
+    elif state["mode"] in {"w", "w_active"}:
         font_info = state["ctx"].get("w_font", "?")
-        left_win.addstr(14, 2, f"Watch: invio ogni secondo (font {font_info})")
-        left_win.addstr(15, 4, "Premi qualsiasi tasto per fermare")
-        status_line = 17
-    elif state["mode"] == "d":
-        left_win.addstr(14, 2, "Countdown: seleziona font")
-        left_win.addstr(15, 4, "Font 1-8 (Montserrat/GoogleSans) o 9-12 (a-d, Bold)")
-        status_line = 17
-    elif state["mode"] == "d_active":
-        font_info = state["ctx"].get("d_font", "?")
-        left_win.addstr(14, 2, f"Countdown font {font_info} (inv. a 15)")
-        left_win.addstr(15, 4, "Premi qualsiasi tasto per fermare")
-        status_line = 17
+        left_win.addstr(current_line, 2, f"Watch: font {font_info} - qualsiasi tasto ferma")
+        status_line = current_line + 2
+    elif state["mode"] in {"d", "d_active"}:
+        font_info = state["ctx"].get("d_font", "?") if state["mode"] == "d_active" else "?"
+        left_win.addstr(current_line, 2, f"Countdown: font {font_info}")
+        status_line = current_line + 2
+    elif state["mode"] == "z_active":
+        left_win.addstr(current_line, 2, "Font demo in corso... premi 'q' per fermare")
+        status_line = current_line + 2
     else:
-        status_line = 14
+        left_win.addstr(current_line, 2, "Mods attivi: premi 'b' per toggle bold (ç)")
+        status_line = current_line + 2
+    
     left_win.addstr(status_line, 2, "Status:")
     left_win.addstr(status_line + 1, 4, state["status"][: left_win.getmaxyx()[1] - 6])
     left_win.addstr(rows - 7, 2, "Nota: § prima del testo = clear display")
+    if state["active"]:
+        left_win.addstr(rows - 6, 2, "Premi 'q' per tornare al menu principale")
     left_win.addstr(rows - 5, 2, "Prompt:")
     left_win.addstr(rows - 4, 4, state["prompt_text"][: left_win.getmaxyx()[1] - 6])
     left_win.addstr(rows - 3, 2, "> " + state["input_line"][: left_win.getmaxyx()[1] - 4])
@@ -373,6 +359,11 @@ def set_command_state(state: dict, mode: str) -> None:
     elif mode == "l":
         state["prompt_text"] = "LED1 r,g,b [0,0,0]"
         state["status"] = "LED values"
+    elif mode == "z":
+        state["prompt_text"] = "Premi invio per avviare loop di tutti i font (font 30 per nomi, testo '19' nel font)"
+        state["status"] = "Font demo"
+        state["ctx"]["font_index"] = 0
+        state["ctx"]["running"] = False
 
 
 def parse_font_input(value: str) -> int | None:
@@ -391,7 +382,7 @@ def complete_command(state: dict) -> None:
     state["active"] = False
     state["mode"] = ""
     state["step"] = 0
-    state["prompt_text"] = "Premi c/i/r/x/a/t/e/l/w/d o q"
+    state["prompt_text"] = "Premi c/i/r/x/a/t/e/l/w/d/z o q"
     state["status"] = "Pronto"
     state["answers"] = []
     state["ctx"] = {}
@@ -636,6 +627,18 @@ def process_active_input(
             state["status"] = warning
         complete_command(state)
         return
+    
+    if mode == "z":
+        if value != "":
+            state["status"] = "Premi Invio per avviare il loop"
+            return
+        # Start font demo loop
+        state["mode"] = "z_active"
+        state["ctx"]["running"] = True
+        state["ctx"]["font_index"] = 0
+        state["ctx"]["last_send"] = 0.0
+        state["status"] = "Font demo avviato..."
+        return
 
 
 def run_curses_interface(
@@ -654,7 +657,7 @@ def run_curses_interface(
         "step": 0,
         "answers": [],
         "ctx": {},
-        "prompt_text": "Premi c/i/r/x/a/t/e/l/w/d o q",
+        "prompt_text": "Premi c/i/r/x/a/t/e/l/w/d/z o q",
         "input_line": "",
         "status": "Pronto",
         "last_tx": "",
@@ -710,6 +713,46 @@ def run_curses_interface(
                 else:
                     state["ctx"]["d_counter"] = ctr - 1
 
+        # Font demo mode: cycle through all fonts displaying "19"
+        if state["mode"] == "z_active" and state["ctx"].get("running", False):
+            now = time.time()
+            if now - state["ctx"].get("last_send", 0.0) >= 4.0:  # 4 seconds per font
+                font_idx = state["ctx"]["font_index"]
+                if font_idx < len(FONT_DATABASE):
+                    font_id, font_name, _ = FONT_DATABASE[font_idx]
+                    
+                    # Clear display with full refresh (c0 command)
+                    _, _ = send_packet(
+                        ser, bytes([0x00, 0x00]),
+                        f"Font demo: full clear", log_lines, exec_log=exec_log,
+                    )
+                    time.sleep(0.5)  # Delay for full refresh to complete
+                    
+                    # Send font name at top with Montserrat 14pt (font 1)
+                    font_name_text = f"({font_id}) {font_name}"
+                    name_payload = normalize_text(font_name_text)
+                    _, _ = send_packet(
+                        ser, bytes([0x01, 0xFF, 1, 10, 20]) + name_payload + bytes([0x00]),
+                        f"Font name", log_lines, exec_log=exec_log,
+                    )
+                    time.sleep(0.1)
+                    
+                    # Send "19" with current font at center
+                    digit_payload = normalize_text("19")
+                    _, _ = send_packet(
+                        ser, bytes([0x01, 0xFF, font_id, 100, 100]) + digit_payload + bytes([0x00]),
+                        f"Font {font_id}: {font_name}", log_lines, exec_log=exec_log,
+                    )
+                    
+                    state["ctx"]["font_index"] += 1
+                    state["ctx"]["last_send"] = now
+                    state["status"] = f"Font demo: {font_id}/15 ({font_name})"
+                else:
+                    # Demo completed
+                    state["ctx"]["running"] = False
+                    complete_command(state)
+                    state["status"] = "Font demo completato"
+
         # Watch mode: send user text with seconds updated every 1s
         if state["mode"] == "w_active":
             now = time.time()
@@ -743,6 +786,13 @@ def run_curses_interface(
                 break
             complete_command(state)
             continue
+        
+        # In font demo mode 'q' returns to menu
+        if state["mode"] == "z_active":
+            if isinstance(ch, str) and ch.lower() == "q":
+                state["ctx"]["running"] = False
+                complete_command(state)
+            continue
 
         if isinstance(ch, str) and ch == "\n":
             if state["active"]:
@@ -754,6 +804,10 @@ def run_curses_interface(
                 state["input_line"] = ""
         elif isinstance(ch, str) and ch in {"\x08", "\x7f"}:
             state["input_line"] = state["input_line"][:-1]
+        elif isinstance(ch, str) and ch.lower() == "q" and state["active"]:
+            # Cancel active command and return to main menu
+            complete_command(state)
+            state["input_line"] = ""
         elif isinstance(ch, str) and ch.lower() == "q" and not state["active"]:
             break
         elif isinstance(ch, str) and ch.lower() == "b" and state["mode"] in {"w_active", "d_active"}:
@@ -762,7 +816,7 @@ def run_curses_interface(
             state["status"] = f"Bold: {'ON' if state['ctx']['useBold'] else 'OFF'} (font {state['ctx'].get('d_font', state['ctx'].get('w_font', '?'))})"
             state["last_d_send"] = time.time() - 1.0  # Force immediate send on next cycle
             state["last_w_send"] = time.time() - 1.0
-        elif isinstance(ch, str) and not state["active"] and ch.lower() in {"c", "i", "r", "x", "a", "t", "e", "l", "w", "d"}:
+        elif isinstance(ch, str) and not state["active"] and ch.lower() in {"c", "i", "r", "x", "a", "t", "e", "l", "w", "d", "z"}:
             set_command_state(state, ch.lower())
             state["input_line"] = ""
         elif isinstance(ch, str) and ch == "\t":

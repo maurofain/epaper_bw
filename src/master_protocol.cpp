@@ -164,8 +164,8 @@ static void processMhSerialByte(uint8_t b
             if (parser.command == PKT_COMMAND) {
                 _LOGI("Master serial command received: 0x00 0x%02X", b);
                 if (b == CMD_DISPLAY_REFRESH) {
-                    _LOGI("Command 0x00 0x00: clear display (partial refresh)");
-                    clearDisplay();
+                    _LOGI("Command 0x00 0x00: full display refresh");
+                    clearDisplayFull();
                 } else if (b == CMD_SCANNER_INIT_REFRESH) {
                     _LOGI("Command 0x00 0x01: scanner init + clear display");
                     initializeScanner();
