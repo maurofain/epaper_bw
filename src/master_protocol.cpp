@@ -2,6 +2,8 @@
 #include "display.h"
 #include "led_control.h"
 #include "scanner_control.h"
+#include "conditional_log.h"
+#include "GDEY0154D67.h"
 
 #include <driver/uart.h>
 #include <esp_log.h>
@@ -25,6 +27,7 @@ constexpr uint8_t CMD_SCANNER_OFF = 0x03;
 constexpr uint8_t CMD_THEME_NORMAL = 0x04;
 constexpr uint8_t CMD_THEME_INVERT = 0x05;
 constexpr uint8_t CMD_MASTER_INIT = 0xAA;
+constexpr uint8_t CMD_MASTER_DISCONNECT = 0xEE;
 constexpr uint8_t CMD_REBOOT = 0xBB;
 constexpr uint8_t CMD_SHOW_LOGO = 0xFF;
 
@@ -34,8 +37,66 @@ enum class PacketState {
     RECEIVE_PAYLOAD,
 };
 
+// Special text flags for display control
+struct TextSpecialFlags {
+    bool hasPartialRefresh = false;  // § flag: partial refresh before display
+    bool useBoldFont = false;        // ç flag: use bold font (9 = GoogleSansBold140)
+    bool useMontserrat = false;      // £ flag: use Montserrat font family
+};
+
+// Strips special prefixes (§, ç, £) from text and returns their flags.
+// § (0xA7 Latin-1 or 0xC2+0xA7 UTF-8) = partial refresh
+// ç (0xE7 Latin-1 or 0xC3+0xA7 UTF-8) = use bold font
+// £ (0xA3 Latin-1 or 0xC2+0xA3 UTF-8) = use Montserrat font family
+// Recursively checks for multiple special prefixes; order doesn't matter.
+static TextSpecialFlags stripSpecialPrefixes(std::string &text) {
+    TextSpecialFlags flags;
+    
+    // Check for § (0xC2+0xA7 UTF-8 or 0xA7 Latin-1)
+    if (text.size() >= 2 && static_cast<uint8_t>(text[0]) == 0xC2 && static_cast<uint8_t>(text[1]) == 0xA7) {
+        text.erase(0, 2);
+        flags.hasPartialRefresh = true;
+    } else if (!text.empty() && static_cast<uint8_t>(text[0]) == 0xA7) {
+        text.erase(0, 1);
+        flags.hasPartialRefresh = true;
+    }
+    
+    // Check for ç (0xC3+0xA7 UTF-8 or 0xE7 Latin-1)
+    if (text.size() >= 2 && static_cast<uint8_t>(text[0]) == 0xC3 && static_cast<uint8_t>(text[1]) == 0xA7) {
+        text.erase(0, 2);
+        flags.useBoldFont = true;
+    } else if (!text.empty() && static_cast<uint8_t>(text[0]) == 0xE7) {
+        text.erase(0, 1);
+        flags.useBoldFont = true;
+    }
+    
+    // Check for £ (0xC2+0xA3 UTF-8 or 0xA3 Latin-1)
+    if (text.size() >= 2 && static_cast<uint8_t>(text[0]) == 0xC2 && static_cast<uint8_t>(text[1]) == 0xA3) {
+        text.erase(0, 2);
+        flags.useMontserrat = true;
+    } else if (!text.empty() && static_cast<uint8_t>(text[0]) == 0xA3) {
+        text.erase(0, 1);
+        flags.useMontserrat = true;
+    }
+    
+    // Recursively check for additional special prefixes
+    if (!text.empty()) {
+        uint8_t firstByte = static_cast<uint8_t>(text[0]);
+        // Check if next character might be special (starts with 0xC or 0xE for UTF-8, or 0xA3/0xA7/0xE7 for Latin-1)
+        if (firstByte == 0xC2 || firstByte == 0xC3 || firstByte == 0xA3 || firstByte == 0xA7 || firstByte == 0xE7) {
+            TextSpecialFlags moreFlags = stripSpecialPrefixes(text);
+            flags.hasPartialRefresh |= moreFlags.hasPartialRefresh;
+            flags.useBoldFont |= moreFlags.useBoldFont;
+            flags.useMontserrat |= moreFlags.useMontserrat;
+        }
+    }
+    
+    return flags;
+}
+
 // Strips the § prefix (0xA7 Latin-1 or 0xC2+0xA7 UTF-8) from text.
 // Returns true if the prefix was found and stripped (caller must clear display first).
+// DEPRECATED: use stripSpecialPrefixes() instead
 static bool stripSectionSign(std::string &text) {
     if (text.size() >= 2 && static_cast<uint8_t>(text[0]) == 0xC2 && static_cast<uint8_t>(text[1]) == 0xA7) {
         text.erase(0, 2);
@@ -79,67 +140,70 @@ static void processMhSerialByte(uint8_t b
         if (parser.state == PacketState::WAIT_VALUE) {
             if (parser.command == PKT_COMMAND && b == CMD_MASTER_INIT) {
                 gMasterInitialized = true;
-                ESP_LOGI(TAG, "Command 0x00 0xAA: master init received");
+                _LOGI("Command 0x00 0xAA: master init received");
             } else if (parser.command == PKT_COMMAND && b == CMD_REBOOT) {
-                ESP_LOGI(TAG, "Command 0x00 0xBB: reboot esp32s2 (pre-init)");
+                _LOGI("Command 0x00 0xBB: reboot esp32s2 (pre-init)");
                 esp_restart();
             } else {
-                ESP_LOGW(TAG, "Master init packet ignored: 0x%02X", b);
+                _LOGW("Master init packet ignored: 0x%02X", b);
             }
             parser.state = PacketState::WAIT_COMMAND;
             return;
         }
     }
-    ESP_LOGD(TAG, "Received byte: 0x%02X state=%d", b, static_cast<int>(parser.state));
+    _LOGD("Received byte: 0x%02X state=%d", b, static_cast<int>(parser.state));
     switch (parser.state) {
         case PacketState::WAIT_COMMAND:
             if (b == PKT_COMMAND || b == PKT_TEXT || b == PKT_LED_VALUES) {
                 parser.command = b;
                 parser.state = PacketState::WAIT_VALUE;
-                ESP_LOGD(TAG, "Packet type %u detected", b);
+                _LOGD("Packet type %u detected", b);
             }
             break;
         case PacketState::WAIT_VALUE:
             if (parser.command == PKT_COMMAND) {
-                ESP_LOGI(TAG, "Master serial command received: 0x00 0x%02X", b);
+                _LOGI("Master serial command received: 0x00 0x%02X", b);
                 if (b == CMD_DISPLAY_REFRESH) {
-                    ESP_LOGI(TAG, "Command 0x00 0x00: clear full display");
+                    _LOGI("Command 0x00 0x00: clear display (partial refresh)");
                     clearDisplay();
                 } else if (b == CMD_SCANNER_INIT_REFRESH) {
-                    ESP_LOGI(TAG, "Command 0x00 0x01: scanner init + clear display");
+                    _LOGI("Command 0x00 0x01: scanner init + clear display");
                     initializeScanner();
                     clearDisplay();
                 } else if (b == CMD_SCANNER_ON) {
-                    ESP_LOGI(TAG, "Command 0x00 0x02: scanner ON");
+                    _LOGI("Command 0x00 0x02: scanner ON");
 #if defined(SCANNER_CONTROL_USE_SERIAL)
                     scannerOn(scannerPort);
 #else
                     scannerOn();
 #endif
                 } else if (b == CMD_SCANNER_OFF) {
-                    ESP_LOGI(TAG, "Command 0x00 0x03: scanner OFF");
+                    _LOGI("Command 0x00 0x03: scanner OFF");
 #if defined(SCANNER_CONTROL_USE_SERIAL)
                     scannerOff(scannerPort);
 #else
                     scannerOff();
 #endif
                 } else if (b == CMD_THEME_NORMAL) {
-                    ESP_LOGI(TAG, "Command 0x00 0x04: theme normal (white bg/black text)");
+                    _LOGI("Command 0x00 0x04: theme normal (white bg/black text)");
                     setDisplayTheme(false);
                 } else if (b == CMD_THEME_INVERT) {
-                    ESP_LOGI(TAG, "Command 0x00 0x05: theme inverted (black bg/white text)");
+                    _LOGI("Command 0x00 0x05: theme inverted (black bg/white text)");
                     setDisplayTheme(true);
                 } else if (b == CMD_MASTER_INIT) {
-                    ESP_LOGI(TAG, "Command 0x00 0xAA: master init received");
+                    _LOGI("Command 0x00 0xAA: master init received");
                     gMasterInitialized = true;
+                } else if (b == CMD_MASTER_DISCONNECT) {
+                    _LOGI("Command 0x00 0xEE: master disconnect - ignoring all input until new 0x00 0xAA");
+                    gMasterInitialized = false;
                 } else if (b == CMD_REBOOT) {
-                    ESP_LOGI(TAG, "Command 0x00 0xBB: reboot esp32s2");
+                    _LOGI("Command 0x00 0xBB: reboot esp32s2");
                     esp_restart();
                 } else if (b == CMD_SHOW_LOGO) {
-                    ESP_LOGI(TAG, "Command 0x00 0xFF: display logo");
+                    _LOGI("Command 0x00 0xFF: display logo");
                     displayLogo();
                 } else {
-                    ESP_LOGW(TAG, "Unknown 0x00 command: 0x%02X", b);
+                    _LOGW("Unknown 0x00 command: 0x%02X", b);
                 }
                 parser.state = PacketState::WAIT_COMMAND;
             } else if (parser.command == PKT_TEXT) {
@@ -178,13 +242,26 @@ static void processMhSerialByte(uint8_t b
                 } else {
                     if (b == 0x00) {
                         std::string text(reinterpret_cast<char*>(parser.payload), parser.payloadLen);
-                        ESP_LOGI(TAG, "Complete extended text payload: font=%u x=%u y=%u text=%s",
+                        _LOGI("Complete extended text payload: font=%u x=%u y=%u text=%s",
                                  parser.fontNumber, parser.posX, parser.posY, text.c_str());
-                        if (stripSectionSign(text)) {
-                            ESP_LOGI(TAG, "§ prefix: clearing display before extended text");
-                            clearDisplay();
+                        
+                        TextSpecialFlags flags = stripSpecialPrefixes(text);
+                        if (flags.hasPartialRefresh) {
+                            _LOGI("§ prefix: filling display with white dots pattern and partial refresh");
+                            fillDisplayWithDots();
+                            GDEY0154D67_refresh_partial();
                         }
-                        displayText(text, parser.fontNumber, parser.posX, parser.posY);
+                        if (flags.useBoldFont) {
+                            _LOGI("ç flag: using bold font 9 instead of %u", parser.fontNumber);
+                            parser.fontNumber = 9;  // Use GoogleSansBold140
+                        }
+                        
+                        // Use clean display if § was present (smooth transitions with opaque background)
+                        if (flags.hasPartialRefresh) {
+                            displayTextClean(text, parser.fontNumber, parser.posX, parser.posY);
+                        } else {
+                            displayText(text, parser.fontNumber, parser.posX, parser.posY);
+                        }
                         parser.state = PacketState::WAIT_COMMAND;
                         break;
                     }
@@ -204,14 +281,24 @@ static void processMhSerialByte(uint8_t b
                             snprintf(hexbuf + i*3, 4, "%02X ", parser.payload[i]);
                         }
                         hexbuf[parser.payloadLen * 3] = '\0';
-                        ESP_LOGI(TAG, "Complete text payload: %s [hex: %s]", text.c_str(), hexbuf);
-                        if (stripSectionSign(text)) {
-                            ESP_LOGI(TAG, "§ prefix: clearing display before text");
-                            clearDisplay();
+                        _LOGI("Complete text payload: %s [hex: %s]", text.c_str(), hexbuf);
+                        
+                        TextSpecialFlags flags = stripSpecialPrefixes(text);
+                        if (flags.hasPartialRefresh) {
+                            _LOGI("§ prefix: filling display with white dots pattern and partial refresh");
+                            fillDisplayWithDots();
+                            GDEY0154D67_refresh_partial();
                         }
-                        displayText(text);
+                        
+                        // If bold font requested in auto mode, use extended format with font 9 at center
+                        if (flags.useBoldFont) {
+                            _LOGI("ç flag: using bold font 9 (auto mode text)");
+                            displayText(text, 9, 100, 100);  // Font 9 = GoogleSansBold140, center position
+                        } else {
+                            displayText(text);  // Auto font selection
+                        }
                     } else if (parser.command == PKT_LED_VALUES) {
-                        ESP_LOGI(TAG, "Complete LED payload received");
+                        _LOGI("Complete LED payload received");
                         applyLedValues(parser.payload);
                     }
                     parser.state = PacketState::WAIT_COMMAND;
@@ -234,7 +321,7 @@ void handleMasterSerial(uart_port_t source
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 break;
             }
-            ESP_LOGW(TAG, "USB console read failed: err=%d", errno);
+            _LOGW("USB console read failed: err=%d", errno);
             break;
         }
         if (len == 0) {
@@ -252,7 +339,7 @@ void handleMasterSerial(uart_port_t source
     if (err != ESP_OK) {
         static bool uart_error_reported = false;
         if (!uart_error_reported) {
-            ESP_LOGW(TAG, "UART master handle skipped: uart_get_buffered_data_len failed (err=0x%02X)", err);
+            _LOGW("UART master handle skipped: uart_get_buffered_data_len failed (err=0x%02X)", err);
             uart_error_reported = true;
         }
         return;
@@ -260,7 +347,7 @@ void handleMasterSerial(uart_port_t source
     if (bufferedLen == 0) {
         return;
     }
-    ESP_LOGD(TAG, "Master serial available: %u bytes", static_cast<unsigned>(bufferedLen));
+    _LOGD("Master serial available: %u bytes", static_cast<unsigned>(bufferedLen));
     while (true) {
         uint8_t b;
         int len = uart_read_bytes(source, &b, 1, 0);

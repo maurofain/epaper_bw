@@ -1,5 +1,6 @@
 #include "GDEY0154D67.h"
 #include "pin_config.h"
+#include "conditional_log.h"
 #include <driver/gpio.h>
 #include <driver/spi_master.h>
 #include <esp_log.h>
@@ -77,7 +78,7 @@ static void waitUntilIdle()
         {
             if ((xTaskGetTickCount() - start) > pdMS_TO_TICKS(EPD_BUSY_TIMEOUT_MS))
             {
-                ESP_LOGW(TAG, "EPD BUSY timeout");
+                _LOGW("EPD BUSY timeout");
                 break;
             }
             feed_watchdog();
@@ -93,7 +94,7 @@ static void epdReset()
 {
     if (PIN_EPD_RST_CFG < 0)
     {
-        ESP_LOGW(TAG, "EPD reset pin not configured");
+        _LOGW("EPD reset pin not configured");
         return;
     }
     gpio_set_level(static_cast<gpio_num_t>(PIN_EPD_RST_CFG), 1);
@@ -121,7 +122,7 @@ static esp_err_t initEpaperSpi()
     esp_err_t err = spi_bus_initialize(SPI2_HOST, &busConfig, SPI_DMA_CH_AUTO);
     if (err != ESP_OK)
     {
-        ESP_LOGE(TAG, "SPI bus initialize failed: 0x%02X", err);
+        _LOGE("SPI bus initialize failed: 0x%02X", err);
         return err;
     }
 
@@ -135,7 +136,7 @@ static esp_err_t initEpaperSpi()
     err = spi_bus_add_device(SPI2_HOST, &devConfig, &epdSpiHandle);
     if (err != ESP_OK)
     {
-        ESP_LOGE(TAG, "SPI device add failed: 0x%02X", err);
+        _LOGE("SPI device add failed: 0x%02X", err);
     }
     return err;
 }
@@ -186,10 +187,33 @@ static void writeEpdRam(uint8_t command, uint8_t value)
     uint8_t *buf = static_cast<uint8_t *>(malloc(length));
     if (buf == nullptr)
     {
-        ESP_LOGE(TAG, "writeEpdRam alloc failed");
+        _LOGE("writeEpdRam alloc failed");
         return;
     }
     memset(buf, value, length);
+    gpio_set_level(static_cast<gpio_num_t>(PIN_EPD_DC_CFG), 1);
+    epdTransmit(buf, length);
+    free(buf);
+}
+
+static void writeEpdRamWithDots(uint8_t pattern1, uint8_t pattern2)
+{
+    // Fill display with dots pattern (checkerboard with specified bytes)
+    setEpdRamArea(0x00, 0x18, 0x0000, 0x00C7);
+    setEpdRamPointer(0x00, 0x0000);
+    sendEpdCommand(0x24); // Write to current buffer
+    const size_t length = (static_cast<size_t>(PANEL_WIDTH) * PANEL_HEIGHT) / 8;
+    uint8_t *buf = static_cast<uint8_t *>(malloc(length));
+    if (buf == nullptr)
+    {
+        _LOGE("writeEpdRamWithDots alloc failed");
+        return;
+    }
+    // Create checkerboard pattern: alternating pattern1 and pattern2
+    for (size_t i = 0; i < length; i++)
+    {
+        buf[i] = (i % 2) ? pattern2 : pattern1;
+    }
     gpio_set_level(static_cast<gpio_num_t>(PIN_EPD_DC_CFG), 1);
     epdTransmit(buf, length);
     free(buf);
@@ -341,7 +365,7 @@ void GDEY0154D67_init()
     esp_err_t err = initEpaperSpi();
     if (err != ESP_OK)
     {
-        ESP_LOGE(TAG, "EPD SPI init failed");
+        _LOGE("EPD SPI init failed");
         return;
     }
 
@@ -349,13 +373,13 @@ void GDEY0154D67_init()
     epdReset();
     if (!epdInitSequence())
     {
-        ESP_LOGE(TAG, "EPD init sequence failed");
+        _LOGE("EPD init sequence failed");
         return;
     }
 
     GDEY0154D67_clear_screen();
     epdInitialized = true;
-    ESP_LOGI(TAG, "EPD initialized");
+    _LOGI("EPD initialized");
 }
 
 void GDEY0154D67_set_orientation(GDEY0154D67_Orientation orientation)
@@ -375,6 +399,13 @@ void GDEY0154D67_clear_screen()
     epdRefresh();
 }
 
+void GDEY0154D67_clear_screen_partial()
+{
+    writeEpdRam(0x26, 0xFF); // previous buffer = white
+    writeEpdRam(0x24, 0xFF); // current buffer = white
+    epdRefreshPartial(); // partial refresh instead of full
+}
+
 void GDEY0154D67_black_screen()
 {
     writeEpdRam(0x26, 0x00); // previous buffer = black
@@ -382,9 +413,30 @@ void GDEY0154D67_black_screen()
     epdRefresh();
 }
 
+void GDEY0154D67_fill_with_white_dots()
+{
+    writeEpdRam(0x26, 0xFF); // previous buffer = white
+    writeEpdRam(0x24, 0xFF); // current buffer = solid white
+    epdRefresh(); // full refresh to consolidate clean state
+    _LOGI("Display filled with white (full refresh applied)");
+}
+
+void GDEY0154D67_fill_with_black_dots()
+{
+    writeEpdRam(0x26, 0xFF); // previous buffer = white
+    writeEpdRam(0x24, 0x00); // current buffer = solid black
+    epdRefresh(); // full refresh to consolidate clean state
+    _LOGI("Display filled with black (full refresh applied)");
+}
+
 void GDEY0154D67_refresh()
 {
     epdRefresh();
+}
+
+void GDEY0154D67_refresh_partial()
+{
+    epdRefreshPartial();
 }
 
 #if ENABLE_DISPLAY_LVGL
@@ -439,7 +491,7 @@ void GDEY0154D67_draw_partial(const lv_area_t *area, lv_color_t *color_p)
     uint8_t *buffer = static_cast<uint8_t *>(malloc(static_cast<size_t>(widthBytes) * static_cast<size_t>(height)));
     if (buffer == nullptr)
     {
-        ESP_LOGW(TAG, "Partial image buffer allocation failed");
+        _LOGW("Partial image buffer allocation failed");
         return;
     }
 

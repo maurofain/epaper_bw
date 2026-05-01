@@ -1,5 +1,6 @@
 #include "pin_config.h"
 #include "scanner_control.h"
+#include "conditional_log.h"
 
 #include <driver/gpio.h>
 #include <driver/uart.h>
@@ -39,11 +40,11 @@ static void configureOutputPin(gpio_num_t pin)
     esp_err_t err = gpio_config(&io_conf);
     if (err != ESP_OK)
     {
-        ESP_LOGE(TAG, "[C] gpio_config failed pin=%d err=0x%02X", static_cast<int>(pin), err);
+        _LOGE("[C] gpio_config failed pin=%d err=0x%02X", static_cast<int>(pin), err);
     }
     else
     {
-        ESP_LOGD(TAG, "[C] GPIO output configured pin=%d", static_cast<int>(pin));
+        _LOGD("[C] GPIO output configured pin=%d", static_cast<int>(pin));
     }
 }
 
@@ -58,11 +59,11 @@ static void configureInputPin(gpio_num_t pin)
     esp_err_t err = gpio_config(&io_conf);
     if (err != ESP_OK)
     {
-        ESP_LOGE(TAG, "[C] gpio_config input failed pin=%d err=0x%02X", static_cast<int>(pin), err);
+        _LOGE("[C] gpio_config input failed pin=%d err=0x%02X", static_cast<int>(pin), err);
     }
     else
     {
-        ESP_LOGD(TAG, "[C] GPIO input configured pin=%d", static_cast<int>(pin));
+        _LOGD("[C] GPIO input configured pin=%d", static_cast<int>(pin));
     }
 }
 
@@ -78,7 +79,7 @@ static void configureScannerControlPinsTriggerMode()
 
 void setupScannerPins()
 {
-    ESP_LOGI(TAG, "[C] setupScannerPins start");
+    _LOGI("[C] setupScannerPins start");
 #if defined(SCANNER_CONTROL_USE_TRIGGER)
     configureScannerControlPinsTriggerMode();
 #else
@@ -87,7 +88,7 @@ void setupScannerPins()
     gpio_set_level(static_cast<gpio_num_t>(PIN_QR_BCRES_CFG), 1);
     configureInputPin(static_cast<gpio_num_t>(PIN_QR_BCTRIG_CFG));
 #endif
-    ESP_LOGI(TAG, "[C] Scanner control pins configured (RESET=%d%s)",
+    _LOGI("[C] Scanner control pins configured (RESET=%d%s)",
              PIN_QR_BCRES_CFG,
 #if defined(SCANNER_CONTROL_USE_TRIGGER)
              ", TRIGGER="
@@ -96,7 +97,7 @@ void setupScannerPins()
 #endif
     );
 #if defined(SCANNER_CONTROL_USE_TRIGGER)
-    ESP_LOGI(TAG, "[C] Scanner trigger pin configured (TRIGGER=%d)", PIN_QR_BCTRIG_CFG);
+    _LOGI("[C] Scanner trigger pin configured (TRIGGER=%d)", PIN_QR_BCTRIG_CFG);
 #endif
 }
 
@@ -104,17 +105,17 @@ void initializeScanner()
 {
     if (scannerInitialized)
     {
-        ESP_LOGD(TAG, "[C] initializeScanner skipped: already initialized");
+        _LOGD("[C] initializeScanner skipped: already initialized");
         return;
     }
-    ESP_LOGI(TAG, "[C] initializeScanner start");
+    _LOGI("[C] initializeScanner start");
     scannerInitialized = true;
 #if defined(SCANNER_CONTROL_USE_TRIGGER)
     configureScannerControlPinsTriggerMode();
 #endif
     vTaskDelay(pdMS_TO_TICKS(50));
-    ESP_LOGI(TAG, "[C] Scanner control pins configured");
-    ESP_LOGI(TAG, "[C] Scanner initialization phase complete");
+    _LOGI("[C] Scanner control pins configured");
+    _LOGI("[C] Scanner initialization phase complete");
 }
 
 #if defined(SCANNER_CONTROL_USE_SERIAL)
@@ -167,7 +168,7 @@ static void logRxChunk(const uint8_t *data, size_t len, const char *contextTag)
     }
 
     const std::string hex = bytesToHex(data, len);
-    ESP_LOGI(TAG, "[C] SCN RX %s len=%u hex=[%s] ascii=[%s]",
+    _LOGI("[C] SCN RX %s len=%u hex=[%s] ascii=[%s]",
              contextTag,
              static_cast<unsigned>(len),
              hex.c_str(),
@@ -178,12 +179,12 @@ static bool writeScannerCommand(uart_port_t scannerPort, const uint8_t *cmd, siz
 {
     if (cmd == nullptr || cmdLen == 0)
     {
-        ESP_LOGW(TAG, "[C] SCN TX %s skipped: empty command", label);
+        _LOGW("[C] SCN TX %s skipped: empty command", label);
         return false;
     }
 
     const std::string hex = bytesToHex(cmd, cmdLen);
-    ESP_LOGI(TAG, "[C] SCN TX %s uart=%d len=%u hex=[%s]",
+    _LOGI("[C] SCN TX %s uart=%d len=%u hex=[%s]",
              label,
              static_cast<int>(scannerPort),
              static_cast<unsigned>(cmdLen),
@@ -192,7 +193,7 @@ static bool writeScannerCommand(uart_port_t scannerPort, const uint8_t *cmd, siz
     const int written = uart_write_bytes(scannerPort, reinterpret_cast<const char *>(cmd), cmdLen);
     if (written != static_cast<int>(cmdLen))
     {
-        ESP_LOGW(TAG, "[C] SCN TX %s partial write=%d expected=%u", label, written, static_cast<unsigned>(cmdLen));
+        _LOGW("[C] SCN TX %s partial write=%d expected=%u", label, written, static_cast<unsigned>(cmdLen));
         return false;
     }
     uart_wait_tx_done(scannerPort, pdMS_TO_TICKS(100));
@@ -203,7 +204,7 @@ static bool writeScannerProtocolCommand(uart_port_t scannerPort, const uint8_t *
 {
     if (payload == nullptr || payloadLen == 0)
     {
-        ESP_LOGW(TAG, "[C] SCN TX %s skipped: empty payload", label);
+        _LOGW("[C] SCN TX %s skipped: empty payload", label);
         return false;
     }
 
@@ -212,7 +213,7 @@ static bool writeScannerProtocolCommand(uart_port_t scannerPort, const uint8_t *
     const size_t frameLen = sizeof(SCANNER_PROTOCOL_PREFIX) + payloadLen + sizeof(SCANNER_PROTOCOL_SUFFIX);
     if (frameLen > kMaxFrameLen)
     {
-        ESP_LOGW(TAG, "[C] SCN TX %s skipped: frame too long=%u", label, static_cast<unsigned>(frameLen));
+        _LOGW("[C] SCN TX %s skipped: frame too long=%u", label, static_cast<unsigned>(frameLen));
         return false;
     }
 
@@ -262,19 +263,19 @@ void scannerOff(uart_port_t scannerPort)
 void scannerSerialSelfTest(uart_port_t scannerPort)
 {
     initializeScanner();
-    ESP_LOGI(TAG, "[C] SCN self-test start (uart=%d, %d 8N1)", static_cast<int>(scannerPort), SCANNER_TTL_BAUD_RATE);
+    _LOGI("[C] SCN self-test start (uart=%d, %d 8N1)", static_cast<int>(scannerPort), SCANNER_TTL_BAUD_RATE);
 
     const esp_err_t baudErr = uart_set_baudrate(scannerPort, SCANNER_TTL_BAUD_RATE);
     if (baudErr != ESP_OK)
     {
-        ESP_LOGW(TAG, "[C] SCN baud set failed uart=%d baud=%d err=0x%02X",
+        _LOGW("[C] SCN baud set failed uart=%d baud=%d err=0x%02X",
                  static_cast<int>(scannerPort),
                  SCANNER_TTL_BAUD_RATE,
                  baudErr);
     }
 
 #if SCANNER_LISTEN_ONLY_MODE_ENABLE
-    ESP_LOGW(TAG, "[C] SCN listen-only mode enabled: no TX commands, log HEX realtime (no CR wait)");
+    _LOGW("[C] SCN listen-only mode enabled: no TX commands, log HEX realtime (no CR wait)");
     while (true)
     {
         uint8_t c = 0;
@@ -295,7 +296,7 @@ void scannerSerialSelfTest(uart_port_t scannerPort)
         }
 
         const std::string hex = bytesToHex(&c, 1);
-        ESP_LOGI(TAG, "[C] SCN RX BYTE hex=[%s] ascii=[%c] dec=%u",
+        _LOGI("[C] SCN RX BYTE hex=[%s] ascii=[%c] dec=%u",
                  hex.c_str(),
                  ascii,
                  static_cast<unsigned>(c));
@@ -308,7 +309,7 @@ void scannerSerialSelfTest(uart_port_t scannerPort)
         size_t responseBytes = readScannerResponse(scannerPort, pdMS_TO_TICKS(200), "EILSCN2");
         if (responseBytes == 0)
         {
-            ESP_LOGW(TAG, "[C] SCN RX EILSCN2 no response");
+            _LOGW("[C] SCN RX EILSCN2 no response");
         }
 
         vTaskDelay(pdMS_TO_TICKS(2000));
@@ -318,7 +319,7 @@ void scannerSerialSelfTest(uart_port_t scannerPort)
         responseBytes = readScannerResponse(scannerPort, pdMS_TO_TICKS(200), "EILSCN0");
         if (responseBytes == 0)
         {
-            ESP_LOGW(TAG, "[C] SCN RX EILSCN0 no response");
+            _LOGW("[C] SCN RX EILSCN0 no response");
         }
 
         vTaskDelay(pdMS_TO_TICKS(2000));
@@ -330,14 +331,14 @@ void scannerOn()
 {
     initializeScanner();
     gpio_set_level(static_cast<gpio_num_t>(PIN_QR_BCTRIG_CFG), 0);
-    ESP_LOGI(TAG, "[C] Scanner ON via trigger (pin=%d level=0)", PIN_QR_BCTRIG_CFG);
+    _LOGI("[C] Scanner ON via trigger (pin=%d level=0)", PIN_QR_BCTRIG_CFG);
 }
 
 void scannerOff()
 {
     initializeScanner();
     gpio_set_level(static_cast<gpio_num_t>(PIN_QR_BCTRIG_CFG), 1);
-    ESP_LOGI(TAG, "[C] Scanner OFF via trigger (pin=%d level=1)", PIN_QR_BCTRIG_CFG);
+    _LOGI("[C] Scanner OFF via trigger (pin=%d level=1)", PIN_QR_BCTRIG_CFG);
 }
 #endif
 
@@ -348,7 +349,7 @@ void forwardScannerData(uart_port_t source, uart_port_t destination)
     if (err != ESP_OK) {
         static bool uart_error_reported = false;
         if (!uart_error_reported) {
-            ESP_LOGW(TAG, "UART scanner forward skipped: uart_get_buffered_data_len failed (err=0x%02X)", err);
+            _LOGW("UART scanner forward skipped: uart_get_buffered_data_len failed (err=0x%02X)", err);
             uart_error_reported = true;
         }
         return;
@@ -357,7 +358,7 @@ void forwardScannerData(uart_port_t source, uart_port_t destination)
     {
         return;
     }
-    ESP_LOGD(TAG, "[C] Forwarding scanner data start (src=%d dst=%d buffered=%u)",
+    _LOGD("[C] Forwarding scanner data start (src=%d dst=%d buffered=%u)",
              static_cast<int>(source),
              static_cast<int>(destination),
              static_cast<unsigned>(bufferedLen));
@@ -376,7 +377,7 @@ void forwardScannerData(uart_port_t source, uart_port_t destination)
         {
             if (!scannerBuffer.empty())
             {
-                ESP_LOGI(TAG, "[C] Scanner line complete (len=%u): %s",
+                _LOGI("[C] Scanner line complete (len=%u): %s",
                          static_cast<unsigned>(scannerBuffer.size()),
                          scannerBuffer.c_str());
 #if defined(MASTER_PROTOCOL_USE_USB_CONSOLE)
@@ -403,7 +404,7 @@ void forwardScannerData(uart_port_t source, uart_port_t destination)
             scannerBuffer.push_back(static_cast<char>(c));
             if (scannerBuffer.length() > 240)
             {
-                ESP_LOGW(TAG, "[C] Scanner chunk flush (len=%u)", static_cast<unsigned>(scannerBuffer.size()));
+                _LOGW("[C] Scanner chunk flush (len=%u)", static_cast<unsigned>(scannerBuffer.size()));
 #if defined(MASTER_PROTOCOL_USE_USB_CONSOLE)
                 const int writtenPayload = static_cast<int>(write(STDOUT_FILENO, scannerBuffer.c_str(), scannerBuffer.size()));
                 const int writtenCrLf = static_cast<int>(write(STDOUT_FILENO, "\r\n", 2));
@@ -425,7 +426,7 @@ void forwardScannerData(uart_port_t source, uart_port_t destination)
         }
     }
 
-    ESP_LOGD(TAG, "[C] Forwarding scanner data end (lines=%u bytes=%u pending=%u)",
+    _LOGD("[C] Forwarding scanner data end (lines=%u bytes=%u pending=%u)",
              static_cast<unsigned>(forwardedLines),
              static_cast<unsigned>(forwardedBytes),
              static_cast<unsigned>(scannerBuffer.size()));

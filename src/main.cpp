@@ -2,11 +2,13 @@
 #include <driver/gpio.h>
 #include <esp_timer.h>
 #include <esp_log.h>
+#if USE_WIFI == 1
 #include <esp_event.h>
 #include <esp_netif.h>
 #include <esp_wifi.h>
 #include <esp_http_server.h>
 #include <esp_ota_ops.h>
+#endif
 #include <esp_partition.h>
 #include <esp_system.h>
 #include <esp_rom_sys.h>
@@ -65,12 +67,6 @@ static void performDisplayTestSequence();
 void displayLogo();
 #endif
 
-#define LOG_TAG "EPaperQr"
-#define _LOGI(...) ESP_LOGI(LOG_TAG, __VA_ARGS__)
-#define _LOGD(...) ESP_LOGD(LOG_TAG, __VA_ARGS__)
-#define _LOGE(...) ESP_LOGE(LOG_TAG, __VA_ARGS__)
-#define _LOGW(...) ESP_LOGW(LOG_TAG, __VA_ARGS__)
-
 #ifndef DISPLAY_UPDATE_INTERVAL_SEC
 #define DISPLAY_UPDATE_INTERVAL_SEC 15
 #endif
@@ -95,8 +91,10 @@ void displayLogo();
 #define SCANNER_TX_SQUARE_WAVE_FREQ_HZ 10000
 #endif
 
+#if USE_WIFI == 1
 #define WIFI_SSID "FWAP02"
 #define WIFI_PASSWORD "fwxi56cgo"
+#endif
 
 #if defined(USE_EPD_GDEY1085F51)
 constexpr uint16_t EPD_WIDTH = 1360;
@@ -107,6 +105,8 @@ constexpr uint16_t EPD_HEIGHT = 200;
 #endif
 
 static const char *TAG = "EPaperQr";
+
+#include "conditional_log.h"
 static constexpr const char *kAppLastChangeDescription = "Prefisso \u00a7: clear display prima del testo";
 static constexpr const char *kAppLastChangeTimestamp = __TIMESTAMP__;
 #if defined(MASTER_PROTOCOL_USE_USB_CONSOLE)
@@ -547,7 +547,7 @@ static void lvglDelayAndRefresh(TickType_t delayTicks)
 
 static void waitForBootButtonPress()
 {
-    ESP_LOGI(TAG, "[M] waiting 5 seconds before next display step");
+    _LOGI("[M] waiting 5 seconds before next display step");
     lvglDelayAndRefresh(pdMS_TO_TICKS(5000));
 }
 
@@ -626,40 +626,42 @@ static void performDisplayTestSequence()
 {
     if (!GDEY0154D67_is_initialized())
     {
-        ESP_LOGW(TAG, "[M] display test skipped: epaper not initialized");
+        _LOGW("[M] display test skipped: epaper not initialized");
         return;
     }
 
-    ESP_LOGI(TAG, "[M] display test 1/5: full refresh current display");
+    _LOGI("[M] display test 1/5: full refresh current display");
     epdFullRefresh();
-    ESP_LOGI(TAG, "[M] display test 1/5: draw checkerboard");
+    _LOGI("[M] display test 1/5: draw checkerboard");
     drawCheckerboard();
     lvglDelayAndRefresh(pdMS_TO_TICKS(10000));
 
-    ESP_LOGI(TAG, "[M] display test 2/5: draw half screen white/black");
+    _LOGI("[M] display test 2/5: draw half screen white/black");
     drawSplitScreen(true);
     lvglDelayAndRefresh(pdMS_TO_TICKS(10000));
 
-    ESP_LOGI(TAG, "[M] display test 3/5: draw half screen black/white");
+    _LOGI("[M] display test 3/5: draw half screen black/white");
     drawSplitScreen(false);
     lvglDelayAndRefresh(pdMS_TO_TICKS(10000));
 
-    ESP_LOGI(TAG, "[M] display test 4/5: show text '123' in three fonts");
+    _LOGI("[M] display test 4/5: show text '123' in three fonts");
     showTextInFonts();
     lvglDelayAndRefresh(pdMS_TO_TICKS(10000));
 
-    ESP_LOGI(TAG, "[M] display test 5/5: show logo");
+    _LOGI("[M] display test 5/5: show logo");
     showLogoTest();
     lvglDelayAndRefresh(pdMS_TO_TICKS(10000));
 
-    ESP_LOGI(TAG, "[M] display test complete");
+    _LOGI("[M] display test complete");
 }
 
 #if defined(SCANNER_CONTROL_USE_SERIAL)
 static const uart_port_t UART_SCANNER = UART_NUM_1;
 static bool gScannerUartReady = false;
 #endif
+#if USE_WIFI == 1
 static httpd_handle_t otaServer = nullptr;
+#endif
 
 #if defined(SCANNER_CONTROL_USE_SERIAL) && SCANNER_TX_SQUARE_WAVE_ENABLE
 static esp_timer_handle_t scannerTxWaveTimer = nullptr;
@@ -762,6 +764,7 @@ static const char *resetReasonToString(esp_reset_reason_t reason)
     }
 }
 
+#if USE_WIFI == 1
 static const esp_partition_t *selectOtaTargetPartition()
 {
     const esp_partition_t *running = esp_ota_get_running_partition();
@@ -816,12 +819,13 @@ static const esp_partition_t *selectOtaTargetPartition()
     }
     return fallback;
 }
+#endif
 
 #if defined(SCANNER_CONTROL_USE_SERIAL) && SCANNER_UART_TX_DIAG_BURST_ENABLE
 static void runScannerUartTxBurstDiagnostic(uart_port_t scannerPort)
 {
     static const uint8_t kPattern[] = {0x55, 0xAA, 0x55, 0xAA, 0x0D, 0x0A};
-    ESP_LOGW(TAG, "[M] SCN TX diag burst attivo: uart=%d tx_pin=%d interval=%dms pattern_len=%u",
+    _LOGW("[M] SCN TX diag burst attivo: uart=%d tx_pin=%d interval=%dms pattern_len=%u",
              static_cast<int>(scannerPort),
              PIN_SCANNER_TX_CFG,
              SCANNER_UART_TX_DIAG_BURST_INTERVAL_MS,
@@ -832,7 +836,7 @@ static void runScannerUartTxBurstDiagnostic(uart_port_t scannerPort)
         const int written = uart_write_bytes(scannerPort, reinterpret_cast<const char *>(kPattern), sizeof(kPattern));
         if (written != static_cast<int>(sizeof(kPattern)))
         {
-            ESP_LOGW(TAG, "[M] SCN TX diag burst write parziale=%d expected=%u",
+            _LOGW("[M] SCN TX diag burst write parziale=%d expected=%u",
                      written,
                      static_cast<unsigned>(sizeof(kPattern)));
         }
@@ -842,6 +846,7 @@ static void runScannerUartTxBurstDiagnostic(uart_port_t scannerPort)
 }
 #endif
 
+#if USE_WIFI == 1
 static void otaRebootTask(void *arg)
 {
     (void)arg;
@@ -964,6 +969,7 @@ static void startOtaHttpServer()
 
     _LOGI("[M] OTA HTTP server ready on port %d endpoint %s", config.server_port, uploadUri.uri);
 }
+#endif
 
 // -----------------------------------------------------------------------------
 // Sezione 1: Logica generale con FreeRTOS
@@ -979,20 +985,31 @@ struct FontDefinition
 };
 
 static const FontDefinition fontDefinitions[] = {
-    {&lv_font_montserrat_48, 2, 2, "montserrat_48"},
-    {&lv_font_montserrat_48, 3, 3, "montserrat_48"},
-    {&lv_font_montserrat_28, 5, 4, "montserrat_28"},
-    {&lv_font_montserrat_28, 10, 8, "montserrat_28"},
-    {&lv_font_montserrat_14, 12, 12, "montserrat_14"},
-    {&lv_font_montserrat_14, 18, 15, "montserrat_14"},
-    {&GoogleSans100, 3, 2, "GoogleSans100"},  // index 6: font# 7
-    {&GoogleSans140, 2, 1, "GoogleSans140"},  // index 7: font# 8
+    // MONTSERRAT (indices 0-2, font# 1-3)
+    {&lv_font_montserrat_14, 12, 12, "montserrat_14"},       // index 0: font# 1
+    {&lv_font_montserrat_28, 5, 4, "montserrat_28"},         // index 1: font# 2
+    {&lv_font_montserrat_48, 2, 2, "montserrat_48"},         // index 2: font# 3
+    // GOOGLE SANS (indices 3-10, font# 4-11)
+    {&GoogleSans10, 18, 15, "GoogleSans10"},                 // index 3: font# 4
+    {&GoogleSans15, 15, 12, "GoogleSans15"},                 // index 4: font# 5
+    {&GoogleSans20, 12, 10, "GoogleSans20"},                 // index 5: font# 6
+    {&GoogleSans35, 6, 5, "GoogleSans35"},                   // index 6: font# 7
+    {&GoogleSans50, 5, 3, "GoogleSans50"},                   // index 7: font# 8
+    {&GoogleSans60, 4, 2, "GoogleSans60"},                   // index 8: font# 9
+    {&GoogleSans100, 3, 2, "GoogleSans100"},                 // index 9: font# 10
+    {&GoogleSans140, 2, 1, "GoogleSans140"},                 // index 10: font# 11
+    // GOOGLE SANS BOLD (indices 11-14, font# 12-15)
+    {&GoogleSansBold40, 5, 3, "GoogleSansBold40"},           // index 11: font# 12 (bold)
+    {&GoogleSansBold60, 4, 2, "GoogleSansBold60"},           // index 12: font# 13 (bold)
+    {&GoogleSansBold100, 3, 2, "GoogleSansBold100"},         // index 13: font# 14 (bold)
+    {&GoogleSansBold140, 2, 1, "GoogleSansBold140"},         // index 14: font# 15 (bold)
 };
 
 static const uint8_t kFontCount = sizeof(fontDefinitions) / sizeof(fontDefinitions[0]);
 
 #endif
 
+#if USE_WIFI == 1
 static void wifiEventHandler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START)
@@ -1015,6 +1032,7 @@ static void wifiEventHandler(void *arg, esp_event_base_t event_base, int32_t eve
         startOtaHttpServer();
     }
 }
+#endif
 
 static bool initNvsStorage()
 {
@@ -1040,6 +1058,7 @@ static bool initNvsStorage()
     return true;
 }
 
+#if USE_WIFI == 1
 static void initWifi()
 {
     if (!initNvsStorage())
@@ -1105,6 +1124,7 @@ static void initWifi()
         _LOGI("WiFi initialization complete, waiting for connection...");
     }
 }
+#endif
 
 static bool initUart(uart_port_t uart_num, int baud_rate, int tx_pin, int rx_pin)
 {
@@ -1374,27 +1394,20 @@ static uint8_t selectFontIndex(const std::string &text)
 
 static uint8_t resolveExtendedFontIndex(uint8_t fontNumber)
 {
-    switch (fontNumber)
-    {
-    case 1:
-        return 4;
-    case 2:
-        return 5;
-    case 3:
-        return 2;
-    case 4:
-        return 3;
-    case 5:
-        return 1;
-    case 6:
-        return 0;
-    case 7:
-        return 6; // GoogleSans100
-    case 8:
-        return 7; // GoogleSans140
-    default:
-        return 4;
+    // Font# (1-15) → array index (0-14)
+    // MONTSERRAT (1-3): indices 0-2
+    // GOOGLE SANS (4-11): indices 3-10
+    // GOOGLE SANS BOLD (12-15): indices 11-14
+    if (fontNumber >= 1 && fontNumber <= 15) {
+        return fontNumber - 1;
     }
+    return 0; // default to Montserrat 14
+}
+
+// Check if a font is a bold variant by checking its name
+static bool isBoldFont(const FontDefinition &fontDef)
+{
+    return fontDef.name && strstr(fontDef.name, "bold") != nullptr;
 }
 
 static void clearActiveScreen()
@@ -1413,13 +1426,29 @@ static void clearActiveScreen()
 
 void clearDisplay()
 {
-    if (GDEY0154D67_is_initialized())
-    {
-        GDEY0154D67_clear_screen();
-    }
 #if ENABLE_DISPLAY_LVGL
     clearActiveScreen();
 #endif
+    if (GDEY0154D67_is_initialized())
+    {
+        GDEY0154D67_clear_screen_partial();
+        _LOGI("clearDisplay: LVGL buffer cleared + e-paper partial refresh applied");
+    }
+}
+
+void fillDisplayWithDots()
+{
+    // Fill e-paper display with dots pattern based on current theme
+    if (GDEY0154D67_is_initialized())
+    {
+        if (g_display_inverted) {
+            _LOGI("fillDisplayWithDots: inverted mode -> black dots");
+            GDEY0154D67_fill_with_black_dots();
+        } else {
+            _LOGI("fillDisplayWithDots: normal mode -> white dots");
+            GDEY0154D67_fill_with_white_dots();
+        }
+    }
 }
 
 void setDisplayTheme(bool inverted)
@@ -1438,7 +1467,7 @@ void setDisplayTheme(bool inverted)
         // No lv_obj_invalidate: theme takes effect on next displayText() call.
         // Forcing a flush here risks triggering an EPD refresh while the panel may be busy.
     }
-    ESP_LOGI(TAG, "Display theme: %s", inverted ? "inverted (black bg/white text)" : "normal (white bg/black text)");
+    _LOGI("Display theme: %s", inverted ? "inverted (black bg/white text)" : "normal (white bg/black text)");
 #endif
 }
 
@@ -1455,7 +1484,7 @@ static void drawCheckerboard()
         canvas_buf = static_cast<lv_color_t *>(malloc(sizeof(lv_color_t) * width * height));
         if (canvas_buf == nullptr)
         {
-            ESP_LOGW(TAG, "Failed to allocate checkerboard canvas buffer");
+            _LOGW("Failed to allocate checkerboard canvas buffer");
             return;
         }
     }
@@ -1544,7 +1573,14 @@ static const lv_img_dsc_t *getInvertedLogoImg()
         inverted_logo.data = inverted_data.data();
         initialized = true;
     }
-    return &inverted_logo;
+    // Return XOR-ed logo if in inverted mode (white on black), normal logo otherwise (black on white)
+    if(g_display_inverted) {
+        _LOGI("Logo: inverted mode -> returning normal (black) logo");
+        return &logo_img;
+    } else {
+        _LOGI("Logo: normal mode -> returning inverted (white) logo");
+        return &inverted_logo;
+    }
 #else
     return nullptr;
 #endif
@@ -1572,7 +1608,7 @@ void displayLogo()
     clearActiveScreen();
     showLogoTest();
 #else
-    ESP_LOGW(TAG, "displayLogo called but LVGL display is disabled");
+    _LOGW("displayLogo called but LVGL display is disabled");
 #endif
 }
 
@@ -1603,7 +1639,7 @@ void displayText(const std::string &raw_text)
     if (display_label == nullptr)
     {
         lv_obj_t *screen = lv_scr_act();
-        if (screen == nullptr) { ESP_LOGW(TAG, "displayText: no active screen"); return; }
+        if (screen == nullptr) { _LOGW("displayText: no active screen"); return; }
         display_label = lv_label_create(screen);
         lv_obj_set_width(display_label, EPD_WIDTH);
         lv_label_set_long_mode(display_label, LV_LABEL_LONG_WRAP);
@@ -1621,16 +1657,20 @@ void displayText(const std::string &raw_text)
     lv_obj_set_style_text_font(display_label, fontDef.font, LV_PART_MAIN);
     lv_label_set_text(display_label, output.c_str());
     lv_obj_align(display_label, LV_ALIGN_CENTER, 0, 0);
-    ESP_LOGI(TAG, "Display text using %s", fontDef.name);
+    _LOGI("Display text using %s", fontDef.name);
 }
 
 void displayText(const std::string &raw_text, uint8_t fontNumber, uint8_t x, uint8_t y)
 {
     lv_obj_t *screen = lv_scr_act();
-    if (screen == nullptr) { ESP_LOGW(TAG, "displayText ext: no active screen"); return; }
+    if (screen == nullptr) { _LOGW("displayText ext: no active screen"); return; }
 
-    // Always create a new label so previous extended labels remain visible.
-    // clearActiveScreen() (triggered by § or CMD_DISPLAY_REFRESH) removes all of them.
+    // Check if we need clean display (§ prefix handling):
+    // If § is detected during stripSpecialPrefixes in master_protocol.cpp, we'll use a single reusable label
+    // with opaque background (like auto mode) instead of creating a new transparent label.
+    // This approach is more fluid because it automatically clears previous content.
+    // For now, we create a new label and let the caller handle the clearing via partial refresh.
+    
     lv_obj_t *label = lv_label_create(screen);
     lv_obj_set_style_text_color(label, themeText(), LV_PART_MAIN);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
@@ -1640,8 +1680,6 @@ void displayText(const std::string &raw_text, uint8_t fontNumber, uint8_t x, uin
     const std::string normalized = normalizeText(raw_text);
     const uint8_t fontIndex = resolveExtendedFontIndex(fontNumber);
     const auto &fontDef = fontDefinitions[fontIndex];
-    // Use LVGL pixel-accurate wrapping across the full display width.
-    // wrapText() is char-count based and would incorrectly split words in proportional fonts.
     lv_obj_set_width(label, EPD_WIDTH);
     lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_font(label, fontDef.font, LV_PART_MAIN);
@@ -1650,23 +1688,52 @@ void displayText(const std::string &raw_text, uint8_t fontNumber, uint8_t x, uin
                  0,
                  static_cast<int32_t>(y) - EPD_HEIGHT / 2);
 
-    // Track last label so callers can still reference it if needed
     display_label = label;
-    ESP_LOGI(TAG, "Extended display text font#%u center=(%u,%u) len=%u", fontNumber, x, y, static_cast<unsigned>(normalized.length()));
+    _LOGI("Extended display text font#%u center=(%u,%u) len=%u", fontNumber, x, y, static_cast<unsigned>(normalized.length()));
+}
+
+void displayTextClean(const std::string &raw_text, uint8_t fontNumber, uint8_t x, uint8_t y)
+{
+    // Clean display version: reuse the same label with opaque background (like auto mode).
+    // This provides smooth transitions by automatically clearing previous content.
+    // Called when § prefix is detected to provide fluid display updates.
+    
+    if (display_label == nullptr)
+    {
+        lv_obj_t *screen = lv_scr_act();
+        if (screen == nullptr) { _LOGW("displayTextClean: no active screen"); return; }
+        display_label = lv_label_create(screen);
+        lv_obj_set_style_text_color(display_label, themeText(), LV_PART_MAIN);
+        lv_obj_set_style_text_align(display_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(display_label, themeBg(), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(display_label, LV_OPA_COVER, LV_PART_MAIN);  // opaque background clears previous content
+    }
+
+    const std::string normalized = normalizeText(raw_text);
+    const uint8_t fontIndex = resolveExtendedFontIndex(fontNumber);
+    const auto &fontDef = fontDefinitions[fontIndex];
+    
+    lv_obj_set_style_text_font(display_label, fontDef.font, LV_PART_MAIN);
+    lv_label_set_text(display_label, normalized.c_str());
+    lv_obj_align(display_label, LV_ALIGN_CENTER,
+                 0,
+                 static_cast<int32_t>(y) - EPD_HEIGHT / 2);
+
+    _LOGI("Extended display text CLEAN font#%u center=(%u,%u) len=%u", fontNumber, x, y, static_cast<unsigned>(normalized.length()));
 }
 
 void displayJpegCentered(const char *path)
 {
     if (path == nullptr)
     {
-        ESP_LOGW(TAG, "displayJpegCentered called with null path");
+        _LOGW("displayJpegCentered called with null path");
         return;
     }
 
     lv_obj_t *screen = lv_scr_act();
     if (screen == nullptr)
     {
-        ESP_LOGW(TAG, "displayJpegCentered failed: no active screen");
+        _LOGW("displayJpegCentered failed: no active screen");
         return;
     }
 
@@ -1674,14 +1741,14 @@ void displayJpegCentered(const char *path)
     lv_res_t info_res = lv_img_decoder_get_info(path, &info);
     if (info_res != LV_RES_OK)
     {
-        ESP_LOGW(TAG, "displayJpegCentered failed to decode image: %s", path);
+        _LOGW("displayJpegCentered failed to decode image: %s", path);
         return;
     }
 
     lv_obj_t *image = lv_img_create(screen);
     lv_img_set_src(image, path);
     lv_obj_center(image);
-    ESP_LOGI(TAG, "displayJpegCentered loaded image: %s (%ux%u)", path, info.w, info.h);
+    _LOGI("displayJpegCentered loaded image: %s (%ux%u)", path, info.w, info.h);
 }
 
 void setupDisplay()
@@ -1775,6 +1842,14 @@ void displayText(const std::string &raw_text, uint8_t fontNumber, uint8_t x, uin
     (void)y;
 }
 
+void displayTextClean(const std::string &raw_text, uint8_t fontNumber, uint8_t x, uint8_t y)
+{
+    (void)raw_text;
+    (void)fontNumber;
+    (void)x;
+    (void)y;
+}
+
 void setupDisplay()
 {
     _LOGW("[M] Display/LVGL disabilitato da ENABLE_DISPLAY_LVGL");
@@ -1796,35 +1871,37 @@ extern "C" void app_main()
 {
     const esp_reset_reason_t resetReason = esp_reset_reason();
     esp_rom_printf("\n[M] app_main entry, reset_reason=%d (%s)\n", static_cast<int>(resetReason), resetReasonToString(resetReason));
-    ESP_LOGI(TAG, "[M] Last change: %s", kAppLastChangeDescription);
-    ESP_LOGI(TAG, "[M] Last change timestamp: %s", kAppLastChangeTimestamp);
-    ESP_LOGI(TAG, "[M] Starting EPaperQr FreeRTOS application");
+    _LOGI("[M] Last change: %s", kAppLastChangeDescription);
+    _LOGI("[M] Last change timestamp: %s", kAppLastChangeTimestamp);
+    _LOGI("[M] Starting EPaperQr FreeRTOS application");
     vTaskDelay(pdMS_TO_TICKS(300));
 
-    ESP_LOGI(TAG, "[M] init step: SPIFFS");
+    _LOGI("[M] init step: SPIFFS");
     if (mountSpiffs())
     {
         logSpiffsFiles();
     }
 #if ENABLE_DISPLAY_LVGL
-    ESP_LOGI(TAG, "[M] init step: display");
+    _LOGI("[M] init step: display");
     setupDisplay();
-    ESP_LOGI(TAG, "[M] init step: LVGL");
+    _LOGI("[M] init step: LVGL");
     setupLvgl();
-    ESP_LOGI(TAG, "[M] init step: UI");
+    _LOGI("[M] init step: UI");
     buildUi();
-#ifdef ENABLE_DISPLAY_TEST 
-    ESP_LOGI(TAG, "[M] init step: display test sequence");
+#if ENABLE_DISPLAY_TEST == 1 
+    _LOGI("[M] init step: display test sequence");
     startDisplayTestTask();
 #endif    
 #else
-    ESP_LOGI(TAG, "[M] init step: display/LVGL skipped (ENABLE_DISPLAY_LVGL=0)");
+    _LOGI("[M] init step: display/LVGL skipped (ENABLE_DISPLAY_LVGL=0)");
 #endif
 
-    ESP_LOGI(TAG, "[M] init step: WiFi");
+    _LOGI("[M] init step: WiFi");
+#if USE_WIFI == 1
     initWifi();
+#endif
 #if defined(MASTER_PROTOCOL_USE_USB_CONSOLE)
-    ESP_LOGI(TAG, "[M] init step: USB console master commands");
+    _LOGI("[M] init step: USB console master commands");
     gMasterUartReady = true;
     int stdinFlags = fcntl(STDIN_FILENO, F_GETFL, 0);
     if (stdinFlags >= 0)
@@ -1833,33 +1910,33 @@ extern "C" void app_main()
     }
     else
     {
-        ESP_LOGW(TAG, "[M] failed to set stdin non-blocking");
+        _LOGW("[M] failed to set stdin non-blocking");
     }
 #else
-    ESP_LOGI(TAG, "[M] init step: UART master");
+    _LOGI("[M] init step: UART master");
     gMasterUartReady = initUart(UART_MASTER, 9600, PIN_TX_ESP_CFG, PIN_RX_ESP_CFG);
 #endif
 #if defined(SCANNER_CONTROL_USE_SERIAL)
-    ESP_LOGI(TAG, "[M] init step: UART scanner");
+    _LOGI("[M] init step: UART scanner");
     gScannerUartReady = initUart(UART_SCANNER, 9600, PIN_SCANNER_TX_CFG, PIN_SCANNER_RX_CFG);
 #if SCANNER_SERIAL_SELF_TEST_ENABLE
-    ESP_LOGI(TAG, "[M] init step: scanner serial self-test");
+    _LOGI("[M] init step: scanner serial self-test");
 #if SCANNER_UART_TX_DIAG_BURST_ENABLE
-    ESP_LOGW(TAG, "[M] init step: scanner TX diagnostic burst mode enabled");
+    _LOGW("[M] init step: scanner TX diagnostic burst mode enabled");
     runScannerUartTxBurstDiagnostic(UART_SCANNER);
 #else
     scannerSerialSelfTest(UART_SCANNER);
 #endif
 #else
-    ESP_LOGI(TAG, "[M] init step: scanner initialization (serial mode, self-test disabled)");
+    _LOGI("[M] init step: scanner initialization (serial mode, self-test disabled)");
     initializeScanner();
 #endif
 #else
     initializeScanner();
 #endif
-    ESP_LOGI(TAG, "[M] init step: RGB LED");
+    _LOGI("[M] init step: RGB LED");
     setupRgbLed();
-    ESP_LOGI(TAG, "[M] init completed");
+    _LOGI("[M] init completed");
 
     uint64_t lastLoopLog = esp_timer_get_time() / 1000;
     while (true)
@@ -1867,7 +1944,7 @@ extern "C" void app_main()
         const uint64_t now = esp_timer_get_time() / 1000;
         if (now - lastLoopLog > 10000)
         {
-            ESP_LOGI(TAG, "Main loop heartbeat");
+            _LOGI("Main loop heartbeat");
             lastLoopLog = now;
         }
 

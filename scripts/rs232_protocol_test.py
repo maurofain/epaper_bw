@@ -38,6 +38,29 @@ READ_TIMEOUT = 0.05
 WRITE_TIMEOUT = 0.5
 MAX_LOG_LINES = 200
 
+# Font definitions: (font_id, name, max_chars)
+# Based on src/main.cpp fontDefinitions[] array
+FONT_DATABASE = [
+    # Montserrat (1-3)
+    (1, "montserrat_14", 12),
+    (2, "montserrat_28", 5),
+    (3, "montserrat_48", 2),
+    # GoogleSans (4-11)
+    (4, "GoogleSans10", 18),
+    (5, "GoogleSans15", 15),
+    (6, "GoogleSans20", 12),
+    (7, "GoogleSans35", 6),
+    (8, "GoogleSans50", 5),
+    (9, "GoogleSans60", 4),
+    (10, "GoogleSans100", 3),
+    (11, "GoogleSans140", 2),
+    # GoogleSansBold (12-15)
+    (12, "GoogleSansBold40", 5),
+    (13, "GoogleSansBold60", 4),
+    (14, "GoogleSansBold100", 3),
+    (15, "GoogleSansBold140", 2),
+]
+
 
 def to_hex(data: bytes) -> str:
     return " ".join(f"{byte:02X}" for byte in data)
@@ -96,6 +119,34 @@ def prompt_port() -> str:
         except SerialException as exc:
             print(f"Impossibile aprire {port}: {exc}")
             print("Riprovare.")
+
+
+def select_font_for_text(text: str, use_bold: bool = False, use_montserrat: bool = False) -> tuple[int, str]:
+    """
+    Auto-select best font for text based on length and style.
+    Returns (font_id, font_name).
+    Tries to use the largest font that fits the text length.
+    """
+    text_len = len(text)
+    
+    # Select font family based on flags
+    if use_montserrat:
+        # Montserrat family (font 1-3)
+        candidates = [(fid, fname, maxch) for fid, fname, maxch in FONT_DATABASE if 1 <= fid <= 3]
+    elif use_bold:
+        # GoogleSansBold family (font 12-15)
+        candidates = [(fid, fname, maxch) for fid, fname, maxch in FONT_DATABASE if 12 <= fid <= 15]
+    else:
+        # GoogleSans family (font 4-11) - default
+        candidates = [(fid, fname, maxch) for fid, fname, maxch in FONT_DATABASE if 4 <= fid <= 11]
+    
+    # Find largest font that fits (iterate backwards = largest to smallest)
+    for fid, fname, maxch in reversed(candidates):
+        if text_len <= maxch:
+            return fid, fname
+    
+    # If nothing fits, use smallest available font
+    return candidates[0][0], candidates[0][1]
 
 
 def open_serial(port: str) -> serial.Serial:
@@ -196,30 +247,59 @@ def draw_windows(
     left_win.addstr(3, 2, "Menu:")
     left_win.addstr(4, 4, "c - comandi 0x00")
     left_win.addstr(5, 4, "i - init 0x00 0xAA")
-    left_win.addstr(6, 4, "r - reboot 0x00 0xBB")
-    left_win.addstr(7, 4, "t - testo auto")
-    left_win.addstr(8, 4, "e - testo esteso")
-    left_win.addstr(9, 4, "l - LED values")
-    left_win.addstr(10, 4, "w - watch secondi")
-    left_win.addstr(11, 4, "d - countdown 60..0")
+    left_win.addstr(6, 4, "x - disconnect 0x00 0xEE")
+    left_win.addstr(7, 4, "r - reboot 0x00 0xBB")
+    left_win.addstr(8, 4, "t - testo auto")
+    left_win.addstr(9, 4, "e - testo esteso")
+    left_win.addstr(10, 4, "l - LED values")
+    left_win.addstr(11, 4, "w - watch secondi")
+    left_win.addstr(12, 4, "d - countdown (scegli font 1-12)")
     left_win.addstr(12, 4, "q - esci")
+    left_win.addstr(16, 2, "Mods attivi: premi 'b' per toggle bold (ç)")
     if state["mode"] == "c":
-        left_win.addstr(13, 2, "Comandi 0x00:")
-        left_win.addstr(14, 4, "0 - refresh totale")
-        left_win.addstr(15, 4, "1 - scanner ON + refresh")
-        left_win.addstr(16, 4, "2 - scanner ON")
-        left_win.addstr(17, 4, "3 - scanner OFF")
-        left_win.addstr(18, 4, "4 - tema normale (bianco/nero)")
-        left_win.addstr(19, 4, "5 - tema invertito (nero/bianco)")
-        left_win.addstr(20, 4, "b - reboot")
-        left_win.addstr(21, 4, "f - mostra logo")
-        status_line = 22
+        left_win.addstr(15, 2, "Comandi 0x00:")
+        left_win.addstr(16, 4, "0 - refresh totale")
+        left_win.addstr(17, 4, "1 - scanner ON + refresh")
+        left_win.addstr(18, 4, "2 - scanner ON")
+        left_win.addstr(19, 4, "3 - scanner OFF")
+        left_win.addstr(20, 4, "4 - tema normale (bianco/nero)")
+        left_win.addstr(21, 4, "5 - tema invertito (nero/bianco)")
+        left_win.addstr(22, 4, "b - reboot")
+        left_win.addstr(23, 4, "f - mostra logo")
+        status_line = 24
+    elif state["mode"] == "a":
+        left_win.addstr(15, 2, "Font disponibili (15 totali):")
+        left_win.addstr(16, 2, "MONTSERRAT (piccolo→grande):")
+        left_win.addstr(17, 4, "1: Montserrat 14pt")
+        left_win.addstr(18, 4, "2: Montserrat 28pt")
+        left_win.addstr(19, 4, "3: Montserrat 48pt")
+        left_win.addstr(20, 2, "GOOGLE SANS (piccolo→grande):")
+        left_win.addstr(21, 4, "4: GoogleSans 10pt")
+        left_win.addstr(22, 4, "5: GoogleSans 15pt")
+        left_win.addstr(23, 4, "6: GoogleSans 20pt")
+        left_win.addstr(24, 4, "7: GoogleSans 35pt")
+        left_win.addstr(25, 4, "8: GoogleSans 50pt")
+        left_win.addstr(26, 4, "9: GoogleSans 60pt")
+        left_win.addstr(27, 4, "10: GoogleSans 100pt")
+        left_win.addstr(28, 4, "11: GoogleSans 140pt")
+        left_win.addstr(29, 2, "GOOGLE SANS BOLD (piccolo→grande):")
+        left_win.addstr(30, 4, "12: GoogleSansBold 40pt")
+        left_win.addstr(31, 4, "13: GoogleSansBold 60pt")
+        left_win.addstr(32, 4, "14: GoogleSansBold 100pt")
+        left_win.addstr(33, 4, "15: GoogleSansBold 140pt")
+        status_line = 35
     elif state["mode"] == "w":
-        left_win.addstr(14, 2, "Watch: invio ogni secondo")
+        font_info = state["ctx"].get("w_font", "?")
+        left_win.addstr(14, 2, f"Watch: invio ogni secondo (font {font_info})")
         left_win.addstr(15, 4, "Premi qualsiasi tasto per fermare")
         status_line = 17
     elif state["mode"] == "d":
-        left_win.addstr(14, 2, "Countdown 60..0 (inv. a 15)")
+        left_win.addstr(14, 2, "Countdown: seleziona font")
+        left_win.addstr(15, 4, "Font 1-8 (Montserrat/GoogleSans) o 9-12 (a-d, Bold)")
+        status_line = 17
+    elif state["mode"] == "d_active":
+        font_info = state["ctx"].get("d_font", "?")
+        left_win.addstr(14, 2, f"Countdown font {font_info} (inv. a 15)")
         left_win.addstr(15, 4, "Premi qualsiasi tasto per fermare")
         status_line = 17
     else:
@@ -258,30 +338,60 @@ def set_command_state(state: dict, mode: str) -> None:
     elif mode == "r":
         state["prompt_text"] = "Premi invio per reboot"
         state["status"] = "Reboot 0x00 0xBB"
+    elif mode == "x":
+        state["prompt_text"] = "Premi invio per disconnect dalla scheda"
+        state["status"] = "Disconnect 0x00 0xEE"
+    elif mode == "a":
+        state["prompt_text"] = "Elenco font disponibili"
+        state["status"] = "Font list"
     elif mode == "w":
-        state["prompt_text"] = "Invio testo/secondi ogni 1s - premi qualsiasi tasto per fermare"
-        state["status"] = "Watch attivo"
+        state["prompt_text"] = "Watch: inserisci testo da visualizzare in loop"
+        state["status"] = "Watch"
+        state["ctx"]["useBold"] = False
+    elif mode == "w_active":
+        state["prompt_text"] = "Watch: font 9 - premi qualsiasi tasto per fermare"
+        state["status"] = "Watch attivo (font 9)"
+        state["ctx"]["w_font"] = 9
+        state["last_w_send"] = 0.0
     elif mode == "d":
-        state["prompt_text"] = "Countdown 60..0 ogni 1s (inv. a 15, reset a 0) - qualsiasi tasto ferma"
-        state["status"] = "Countdown attivo"
+        state["prompt_text"] = "Countdown: inserisci testo da visualizzare con countdown"
+        state["status"] = "Countdown"
+    elif mode == "d_active":
+        state["prompt_text"] = "Countdown: font 9 - qualsiasi tasto ferma"
+        state["status"] = "Countdown attivo (font 9)"
         state["ctx"]["d_counter"] = 60
         state["ctx"]["d_inverted"] = False
+        state["ctx"]["d_font"] = 9
+        state["ctx"]["useBold"] = False
+        state["last_d_send"] = 0.0
     elif mode == "t":
-        state["prompt_text"] = "Inserisci testo (usa \\n per CR)"
+        state["prompt_text"] = "Testo (ç=bold, £=Montserrat, §=refresh) auto seleziona font"
         state["status"] = "Testo auto"
     elif mode == "e":
-        state["prompt_text"] = "Font 1-8 [4] (7=GS100, 8=GS140 solo cifre)"
+        state["prompt_text"] = "Font 1-15 [7] (vedi 'a' per lista completa)"
         state["status"] = "Testo esteso"
     elif mode == "l":
         state["prompt_text"] = "LED1 r,g,b [0,0,0]"
         state["status"] = "LED values"
 
 
+def parse_font_input(value: str) -> int | None:
+    """Parse font input: 1-15 or a-d (maps to 12-15). Returns None if invalid."""
+    value = value.strip().lower()
+    if value.isdigit():
+        font = int(value)
+        if 1 <= font <= 15:
+            return font
+    elif value in {"a", "b", "c", "d"}:
+        return 12 + ord(value) - ord("a")
+    return None
+
+
 def complete_command(state: dict) -> None:
     state["active"] = False
     state["mode"] = ""
     state["step"] = 0
-    state["prompt_text"] = "Premi c/i/r/t/e/l/w/d o q"
+    state["prompt_text"] = "Premi c/i/r/x/a/t/e/l/w/d o q"
     state["status"] = "Pronto"
     state["answers"] = []
     state["ctx"] = {}
@@ -354,16 +464,54 @@ def process_active_input(
             state["status"] = warning
         complete_command(state)
         return
+    elif mode == "x":
+        if value != "":
+            state["status"] = "Premi Invio per inviare disconnect"
+            return
+        packet = bytes([0x00, 0xEE])
+        _, warning = send_packet(
+            ser,
+            packet,
+            "CMD 0x00 0xEE (disconnect)",
+            log_lines,
+            exec_log=exec_log,
+        )
+        if warning:
+            state["status"] = warning
+        complete_command(state)
+        return
     if mode == "t":
         payload = normalize_text(value_raw)
         if len(payload) > 0xFE:
             payload = payload[:0xFE]
             state["status"] = "Testo troncato a 254 byte"
-        packet = bytes([0x01, len(payload)]) + payload
+        
+        # Auto-select font based on text length
+        # Extract prefix flags: ç (bold), £ (Montserrat), § (partial refresh)
+        text_str = value_raw
+        use_bold = text_str.startswith("ç") or text_str.startswith("\xE7") or "\\xE7" in text_str
+        use_montserrat = text_str.startswith("£") or text_str.startswith("\xA3") or "\\xA3" in text_str
+        
+        font_id, font_name = select_font_for_text(value_raw, use_bold=use_bold, use_montserrat=use_montserrat)
+        
+        # Build prefix with appropriate modifiers
+        prefix = ""
+        if use_montserrat:
+            prefix += "£"
+        if use_bold:
+            prefix += "ç"
+        
+        # Add payload with prefix
+        final_payload = normalize_text(prefix + value_raw)
+        if len(final_payload) > 0xFE:
+            final_payload = final_payload[:0xFE]
+            state["status"] = "Testo troncato a 254 byte"
+        
+        packet = bytes([0x01, len(final_payload)]) + final_payload
         _, warning = send_packet(
             ser,
             packet,
-            "TEXT AUTO",
+            f"TEXT AUTO (font {font_id}: {font_name})",
             log_lines,
             exec_log=exec_log,
         )
@@ -375,11 +523,11 @@ def process_active_input(
     if mode == "e":
         if step == 0:
             if value == "":
-                font = 4
-            elif value.isdigit() and 1 <= int(value) <= 8:
+                font = 7
+            elif value.isdigit() and 1 <= int(value) <= 15:
                 font = int(value)
             else:
-                state["status"] = "Font non valido, inserisci 1-8"
+                state["status"] = "Font non valido, inserisci 1-15"
                 return
             state["ctx"]["font"] = font
             state["step"] = 1
@@ -426,6 +574,37 @@ def process_active_input(
                 state["status"] = warning
             complete_command(state)
             return
+
+    if mode == "w":
+        payload = normalize_text(value_raw)
+        if len(payload) > 250:
+            payload = payload[:250]
+            state["status"] = "Testo troncato a 250 byte"
+        state["ctx"]["w_text"] = payload
+        # Clear display before starting watch (partial refresh)
+        _, warning = send_packet(
+            ser, bytes([0x00, 0x00]), "CMD display refresh (partial)", log_lines, exec_log=exec_log,
+        )
+        set_command_state(state, "w_active")
+        return
+
+    if mode == "d":
+        payload = normalize_text(value_raw)
+        if len(payload) > 250:
+            payload = payload[:250]
+            state["status"] = "Testo troncato a 250 byte"
+        state["ctx"]["d_text"] = payload
+        # Clear display before starting countdown (partial refresh)
+        _, warning = send_packet(
+            ser, bytes([0x00, 0x00]), "CMD display refresh (partial)", log_lines, exec_log=exec_log,
+        )
+        set_command_state(state, "d_active")
+        return
+
+    if mode == "a":
+        # Font list display - just complete and let draw_windows show it
+        complete_command(state)
+        return
 
     if mode == "l":
         try:
@@ -475,7 +654,7 @@ def run_curses_interface(
         "step": 0,
         "answers": [],
         "ctx": {},
-        "prompt_text": "Premi c/i/r/t/e/l/w/d o q",
+        "prompt_text": "Premi c/i/r/x/a/t/e/l/w/d o q",
         "input_line": "",
         "status": "Pronto",
         "last_tx": "",
@@ -504,15 +683,20 @@ def run_curses_interface(
             for raw_line in lines:
                 append_log(log_lines, f"RX: {to_ascii(raw_line)}")
 
-        # Countdown mode: send counter every 1s, invert at 15, reset at 0
-        if state["mode"] == "d":
+        # Countdown mode: send user text with counter every 1s, invert at 15, reset at 0
+        if state["mode"] == "d_active":
             now = time.time()
             if now - state["last_d_send"] >= 1.0:
                 ctr = state["ctx"]["d_counter"]
-                payload = normalize_text(str(ctr))
+                font = state["ctx"].get("d_font", 8)
+                use_bold = state["ctx"].get("useBold", False)
+                user_text = state["ctx"].get("d_text", "")
+                prefix = "ç§" if use_bold else "§"
+                text_with_ctr = user_text + f"\n{ctr:02d}" if user_text else str(ctr)
+                payload = normalize_text(prefix + text_with_ctr)
                 _, warning = send_packet(
-                    ser, bytes([0x01, len(payload)]) + payload,
-                    f"COUNTDOWN {ctr}", log_lines, exec_log=exec_log,
+                    ser, bytes([0x01, 0xFF, font, 100, 100]) + payload + bytes([0x00]),
+                    f"COUNTDOWN {ctr} (font {font}{'+ bold' if use_bold else ''})", log_lines, exec_log=exec_log,
                 )
                 state["status"] = warning if warning else f"Countdown: {ctr}"
                 state["last_d_send"] = now
@@ -526,15 +710,20 @@ def run_curses_interface(
                 else:
                     state["ctx"]["d_counter"] = ctr - 1
 
-        # Watch mode: send current seconds every 1s
-        if state["mode"] == "w":
+        # Watch mode: send user text with seconds updated every 1s
+        if state["mode"] == "w_active":
             now = time.time()
             if now - state["last_w_send"] >= 1.0:
                 sec = time.localtime().tm_sec
-                payload = normalize_text(str(sec))
+                font = state["ctx"].get("w_font", 9)
+                use_bold = state["ctx"].get("useBold", False)
+                user_text = state["ctx"].get("w_text", "")
+                prefix = "ç§" if use_bold else "§"
+                text_with_sec = user_text + f"\n{sec:02d}s" if user_text else str(sec)
+                payload = normalize_text(prefix + text_with_sec)
                 _, warning = send_packet(
-                    ser, bytes([0x01, len(payload)]) + payload,
-                    f"WATCH {sec:02d}s", log_lines, exec_log=exec_log,
+                    ser, bytes([0x01, 0xFF, font, 100, 100]) + payload + bytes([0x00]),
+                    f"WATCH {sec:02d}s (font {font}{'+ bold' if use_bold else ''})", log_lines, exec_log=exec_log,
                 )
                 state["status"] = warning if warning else f"Watch: inviato {sec:02d}s"
                 state["last_w_send"] = now
@@ -549,7 +738,7 @@ def run_curses_interface(
             continue
 
         # In watch/countdown mode any key stops it; 'q' also exits the app
-        if state["mode"] in {"w", "d"}:
+        if state["mode"] in {"w_active", "d_active"}:
             if isinstance(ch, str) and ch.lower() == "q":
                 break
             complete_command(state)
@@ -567,7 +756,13 @@ def run_curses_interface(
             state["input_line"] = state["input_line"][:-1]
         elif isinstance(ch, str) and ch.lower() == "q" and not state["active"]:
             break
-        elif isinstance(ch, str) and not state["active"] and ch.lower() in {"c", "i", "r", "t", "e", "l", "w", "d"}:
+        elif isinstance(ch, str) and ch.lower() == "b" and state["mode"] in {"w_active", "d_active"}:
+            # Toggle bold font (ç flag) in active modes
+            state["ctx"]["useBold"] = not state["ctx"].get("useBold", False)
+            state["status"] = f"Bold: {'ON' if state['ctx']['useBold'] else 'OFF'} (font {state['ctx'].get('d_font', state['ctx'].get('w_font', '?'))})"
+            state["last_d_send"] = time.time() - 1.0  # Force immediate send on next cycle
+            state["last_w_send"] = time.time() - 1.0
+        elif isinstance(ch, str) and not state["active"] and ch.lower() in {"c", "i", "r", "x", "a", "t", "e", "l", "w", "d"}:
             set_command_state(state, ch.lower())
             state["input_line"] = ""
         elif isinstance(ch, str) and ch == "\t":
@@ -595,14 +790,17 @@ def text_auto_menu(ser: serial.Serial) -> None:
 def text_extended_menu(ser: serial.Serial) -> None:
     print("\n-- Test testo esteso con font e posizione (0x01 0xFF ...) --")
     while True:
-        font_str = input("Scegli font da 1 a 8 [default 4] (7=GS100, 8=GS140 solo cifre): ").strip()
+        font_str = input("Scegli font da 1 a 15 [default 7] (vedi comandi per lista): ").strip()
         if font_str == "":
-            font = 4
+            font = 7
             break
-        if font_str.isdigit() and 1 <= int(font_str) <= 8:
+        font = parse_font_input(font_str)
+        if font is not None:
+            break
+        if font_str.isdigit() and 1 <= int(font_str) <= 15:
             font = int(font_str)
             break
-        print("Valore non valido, inserisci 1-6.")
+        print("Valore non valido, inserisci 1-15.")
     pos_x = 100
     pos_y = 100
     pos_input = input(f"Posizione centrale [{pos_x},{pos_y}] (Formato x,y): ").strip()

@@ -23,8 +23,12 @@ void GDEY0154D67_set_orientation(GDEY0154D67_Orientation orientation);
 bool GDEY0154D67_is_initialized();
 
 void GDEY0154D67_clear_screen();
+void GDEY0154D67_clear_screen_partial();  // Clear with partial refresh instead of full
 void GDEY0154D67_black_screen();
+void GDEY0154D67_fill_with_white_dots();  // Fill display with white dots pattern
+void GDEY0154D67_fill_with_black_dots();  // Fill display with black dots pattern
 void GDEY0154D67_refresh();
+void GDEY0154D67_refresh_partial();
 
 #if ENABLE_DISPLAY_LVGL
 void GDEY0154D67_draw_partial(const lv_area_t *area, lv_color_t *color_p);
