@@ -247,9 +247,11 @@ static void processMhSerialByte(uint8_t b
                         
                         TextSpecialFlags flags = stripSpecialPrefixes(text);
                         if (flags.hasPartialRefresh) {
-                            _LOGI("§ prefix: filling display with white dots pattern and partial refresh");
-                            fillDisplayWithDots();
-                            GDEY0154D67_refresh_partial();
+                            _LOGI("§ prefix: LVGL buffer clear + partial refresh (optimized for fast updates)");
+#if ENABLE_DISPLAY_LVGL
+                            clearActiveScreen();  // Clear LVGL buffer only (no full e-paper refresh)
+#endif
+                            GDEY0154D67_refresh_partial();  // Fast partial refresh
                         }
                         if (flags.useBoldFont) {
                             _LOGI("ç flag: using bold font 9 instead of %u", parser.fontNumber);
@@ -285,9 +287,11 @@ static void processMhSerialByte(uint8_t b
                         
                         TextSpecialFlags flags = stripSpecialPrefixes(text);
                         if (flags.hasPartialRefresh) {
-                            _LOGI("§ prefix: filling display with white dots pattern and partial refresh");
-                            fillDisplayWithDots();
-                            GDEY0154D67_refresh_partial();
+                            _LOGI("§ prefix: LVGL buffer clear + partial refresh (optimized for fast updates)");
+#if ENABLE_DISPLAY_LVGL
+                            clearActiveScreen();  // Clear LVGL buffer only (no full e-paper refresh)
+#endif
+                            GDEY0154D67_refresh_partial();  // Fast partial refresh
                         }
                         
                         // If bold font requested in auto mode, use extended format with font 9 at center

@@ -1410,7 +1410,7 @@ static bool isBoldFont(const FontDefinition &fontDef)
     return fontDef.name && strstr(fontDef.name, "bold") != nullptr;
 }
 
-static void clearActiveScreen()
+void clearActiveScreen()
 {
 #if ENABLE_DISPLAY_LVGL
     lv_obj_t *screen = lv_scr_act();
