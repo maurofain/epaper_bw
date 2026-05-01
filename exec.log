@@ -466,3 +466,88 @@ I (214050) MasterProtocol: ยง prefix: LVGL buffer clear + partial refresh (optim
 I (214368) EPaperQr: Extended display text CLEAN font#9 center=(100,100) len=1
 I (215054) MasterProtocol: Complete extended text payload: font=9 x=100 y=100 text=ง1
 I (215055) MasterProtocol: ยง prefix: LVGL buffer clear + partial refresh (optimized for fast updates)
+I (215373) EPaperQr: Extended display text CLEAN font#9 center=(100,100) len=1
+I (216064) MasterProtocol: Complete extended text payload: font=9 x=100 y=100 text=ง0
+I (216065) MasterProtocol: ยง prefix: LVGL buffer clear + partial refresh (optimized for fast updates)
+I (216382) EPaperQr: Extended display text CLEAN font#9 center=(100,100) len=1
+I (216383) MasterProtocol: Master serial command received: 0x00 0x04
+I (216385) MasterProtocol: Command 0x00 0x04: theme normal (white bg/black text)
+I (216386) EPaperQr: Display theme: normal (white bg/black text)
+I (217096) MasterProtocol: Complete extended text payload: font=9 x=100 y=100 text=ง60
+I (217097) MasterProtocol: ยง prefix: LVGL buffer clear + partial refresh (optimized for fast updates)
+I (217415) EPaperQr: Extended display text CLEAN font#9 center=(100,100) len=2
+I (218105) MasterProtocol: Complete extended text payload: font=9 x=100 y=100 text=ง59
+I (218106) MasterProtocol: ยง prefix: LVGL buffer clear + partial refresh (optimized for fast updates)
+I (218423) EPaperQr: Extended display text CLEAN font#9 center=(100,100) len=2
+I (219108) MasterProtocol: Complete extended text payload: font=9 x=100 y=100 text=ง58
+I (219109) MasterProtocol: ยง prefix: LVGL buffer clear + partial refresh (optimized for fast updates)
+I (219427) EPaperQr: Extended display text CLEAN font#9 center=(100,100) len=2
+I (219812) EPaperQr: Main loop heartbeat
+I (220117) MasterProtocol: Complete extended text payload: font=9 x=100 y=100 text=ง57
+I (220118) MasterProtocol: ยง prefix: LVGL buffer clear + partial refresh (optimized for fast updates)
+I (220436) EPaperQr: Extended display text CLEAN font#9 center=(100,100) len=2
+I (221121) MasterProtocol: Complete extended text payload: font=9 x=100 y=100 text=ง56
+I (221122) MasterProtocol: ยง prefix: LVGL buffer clear + partial refresh (optimized for fast updates)
+I (221439) EPaperQr: Extended display text CLEAN font#9 center=(100,100) len=2
+I (222129) MasterProtocol: Complete extended text payload: font=9 x=100 y=100 text=ง55
+I (222130) MasterProtocol: ยง prefix: LVGL buffer clear + partial refresh (optimized for fast updates)
+I (222448) EPaperQr: Extended display text CLEAN font#9 center=(100,100) len=2
+I (223138) MasterProtocol: Complete extended text payload: font=9 x=100 y=100 text=ง54
+I (223139) MasterProtocol: ยง prefix: LVGL buffer clear + partial refresh (optimized for fast updates)
+I (223456) EPaperQr: Extended display text CLEAN font#9 center=(100,100) len=2
+I (224146) MasterProtocol: Complete extended text payload: font=9 x=100 y=100 text=ง53
+I (224147) MasterProtocol: ยง prefix: LVGL buffer clear + partial refresh (optimized for fast updates)
+I (224465) EPaperQr: Extended display text CLEAN font#9 center=(100,100) len=2
+I (225150) MasterProtocol: Complete extended text payload: font=9 x=100 y=100 text=ง52
+I (225151) MasterProtocol: ยง prefix: LVGL buffer clear + partial refresh (optimized for fast updates)
+I (225469) EPaperQr: Extended display text CLEAN font#9 center=(100,100) len=2
+I (226159) MasterProtocol: Complete extended text payload: font=9 x=100 y=100 text=ง51
+I (226160) MasterProtocol: ยง prefix: LVGL buffer clear + partial refresh (optimized for fast updates)
+I (226478) EPaperQr: Extended display text CLEAN font#9 center=(100,100) len=2
+I (227168) MasterProtocol: Complete extended text payload: font=9 x=100 y=100 text=ง50
+I (227169) MasterProtocol: ยง prefix: LVGL buffer clear + partial refresh (optimized for fast updates)
+I (227486) EPaperQr: Extended display text CLEAN font#9 center=(100,100) len=2
+I (228171) MasterProtocol: Complete extended text payload: font=9 x=100 y=100 text=ง49
+I (228172) MasterProtocol: ยง prefix: LVGL buffer clear + partial refresh (optimized for fast updates)
+I (228490) EPaperQr: Extended display text CLEAN font#9 center=(100,100) len=2
+I (229180) MasterProtocol: Complete extended text payload: font=9 x=100 y=100 text=ง48
+I (229181) MasterProtocol: ยง prefix: LVGL buffer clear + partial refresh (optimized for fast updates)
+I (229499) EPaperQr: Extended display text CLEAN font#9 center=(100,100) len=2
+I (229884) EPaperQr: Main loop heartbeat
+I (230189) MasterProtocol: Complete extended text payload: font=9 x=100 y=100 text=ง47
+I (230190) MasterProtocol: ยง prefix: LVGL buffer clear + partial refresh (optimized for fast updates)
+I (230507) EPaperQr: Extended display text CLEAN font#9 center=(100,100) len=2
+I (231192) MasterProtocol: Complete extended text payload: font=9 x=100 y=100 text=ง46
+I (231193) MasterProtocol: ยง prefix: LVGL buffer clear + partial refresh (optimized for fast updates)
+I (231511) EPaperQr: Extended display text CLEAN font#9 center=(100,100) len=2
+I (232201) MasterProtocol: Complete extended text payload: font=9 x=100 y=100 text=ง45
+I (232202) MasterProtocol: ยง prefix: LVGL buffer clear + partial refresh (optimized for fast updates)
+I (232520) EPaperQr: Extended display text CLEAN font#9 center=(100,100) len=2
+I (233210) MasterProtocol: Complete extended text payload: font=9 x=100 y=100 text=ง44
+I (233211) MasterProtocol: ยง prefix: LVGL buffer clear + partial refresh (optimized for fast updates)
+I (233529) EPaperQr: Extended display text CLEAN font#9 center=(100,100) len=2
+I (234214) MasterProtocol: Complete extended text payload: font=9 x=100 y=100 text=ง43
+I (234215) MasterProtocol: ยง prefix: LVGL buffer clear + partial refresh (optimized for fast updates)
+I (234533) EPaperQr: Extended display text CLEAN font#9 center=(100,100) len=2
+I (235223) MasterProtocol: Complete extended text payload: font=9 x=100 y=100 text=ง42
+I (235224) MasterProtocol: ยง prefix: LVGL buffer clear + partial refresh (optimized for fast updates)
+I (235542) EPaperQr: Extended display text CLEAN font#9 center=(100,100) len=2
+I (236232) MasterProtocol: Complete extended text payload: font=9 x=100 y=100 text=ง41
+I (236233) MasterProtocol: ยง prefix: LVGL buffer clear + partial refresh (optimized for fast updates)
+I (236551) EPaperQr: Extended display text CLEAN font#9 center=(100,100) len=2
+I (237236) MasterProtocol: Complete extended text payload: font=9 x=100 y=100 text=ง40
+I (237237) MasterProtocol: ยง prefix: LVGL buffer clear + partial refresh (optimized for fast updates)
+I (237555) EPaperQr: Extended display text CLEAN font#9 center=(100,100) len=2
+I (238245) MasterProtocol: Complete extended text payload: font=9 x=100 y=100 text=ง39
+I (238246) MasterProtocol: ยง prefix: LVGL buffer clear + partial refresh (optimized for fast updates)
+I (238564) EPaperQr: Extended display text CLEAN font#9 center=(100,100) len=2
+I (239254) MasterProtocol: Complete extended text payload: font=9 x=100 y=100 text=ง38
+I (239255) MasterProtocol: ยง prefix: LVGL buffer clear + partial refresh (optimized for fast updates)
+I (239573) EPaperQr: Extended display text CLEAN font#9 center=(100,100) len=2
+I (239958) EPaperQr: Main loop heartbeat
+I (240263) MasterProtocol: Complete extended text payload: font=9 x=100 y=100 text=ง37
+I (240264) MasterProtocol: ยง prefix: LVGL buffer clear + partial refresh (optimized for fast updates)
+I (240582) EPaperQr: Extended display text CLEAN font#9 center=(100,100) len=2
+I (241272) MasterProtocol: Complete extended text payload: font=9 x=100 y=100 text=ง36
+I (241273) MasterProtocol: ยง prefix: LVGL buffer clear + partial refresh (optimized for fast updates)
+I (241591) EPaperQr: Extended display text CLEAN font#9 center=(100,100) len=2
