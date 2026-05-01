@@ -255,7 +255,8 @@ def draw_windows(
     left_win.addstr(11, 4, "w - watch secondi")
     left_win.addstr(12, 4, "d - countdown (scegli font 1-12)")
     left_win.addstr(13, 4, "z - font demo (mostra tutti i font)")
-    left_win.addstr(14, 4, "q - esci")
+    left_win.addstr(14, 4, "f - toggle log visibility")
+    left_win.addstr(15, 4, "q - esci")
     
     current_line = 16
     if state["mode"] == "c":
@@ -299,22 +300,30 @@ def draw_windows(
     left_win.noutrefresh()
 
     right_win.erase()
-    right_win.box()
-    right_win.addstr(1, 2, "Ingresso seriale (solo testo)")
-    log_start = max(0, len(log_lines) - (right_rows - 3))
-    for idx, line in enumerate(log_lines[log_start:]):
-        line_text = line[: right_cols - 4]
-        right_win.addstr(2 + idx, 2, line_text)
+    if state["show_logs"]:
+        right_win.box()
+        right_win.addstr(1, 2, "Ingresso seriale (solo testo)")
+        log_start = max(0, len(log_lines) - (right_rows - 3))
+        for idx, line in enumerate(log_lines[log_start:]):
+            line_text = line[: right_cols - 4]
+            right_win.addstr(2 + idx, 2, line_text)
     right_win.noutrefresh()
     curses.doupdate()
 
 
 def set_command_state(state: dict, mode: str) -> None:
+    # Preserve important context values before reset
+    w_font = state["ctx"].get("w_font") if state["ctx"] else None
+    w_text = state["ctx"].get("w_text") if state["ctx"] else None
+    d_font = state["ctx"].get("d_font") if state["ctx"] else None
+    d_text = state["ctx"].get("d_text") if state["ctx"] else None
+    
     state["active"] = True
     state["mode"] = mode
     state["step"] = 0
     state["answers"] = []
     state["ctx"] = {}
+    
     if mode == "c":
         state["prompt_text"] = "Seleziona comando 0-5/b/f"
         state["status"] = "Comando 0x00"
@@ -331,23 +340,35 @@ def set_command_state(state: dict, mode: str) -> None:
         state["prompt_text"] = "Elenco font disponibili"
         state["status"] = "Font list"
     elif mode == "w":
-        state["prompt_text"] = "Watch: inserisci testo da visualizzare in loop"
-        state["status"] = "Watch"
+        state["prompt_text"] = "Watch: Font 1-15 (a-d per bold) [9]"
+        state["status"] = "Watch - scegli font"
         state["ctx"]["useBold"] = False
+        state["step"] = 0
     elif mode == "w_active":
-        state["prompt_text"] = "Watch: font 9 - premi qualsiasi tasto per fermare"
-        state["status"] = "Watch attivo (font 9)"
-        state["ctx"]["w_font"] = 9
+        # Restore preserved values
+        if w_font is not None:
+            state["ctx"]["w_font"] = w_font
+        if w_text is not None:
+            state["ctx"]["w_text"] = w_text
+        font = state["ctx"].get("w_font", 9)
+        state["prompt_text"] = f"Watch: font {font} - premi qualsiasi tasto per fermare"
+        state["status"] = f"Watch attivo (font {font})"
         state["last_w_send"] = 0.0
     elif mode == "d":
-        state["prompt_text"] = "Countdown: inserisci testo da visualizzare con countdown"
-        state["status"] = "Countdown"
+        state["prompt_text"] = "Countdown: Font 1-15 (a-d per bold) [9]"
+        state["status"] = "Countdown - scegli font"
+        state["step"] = 0
     elif mode == "d_active":
-        state["prompt_text"] = "Countdown: font 9 - qualsiasi tasto ferma"
-        state["status"] = "Countdown attivo (font 9)"
+        # Restore preserved values
+        if d_font is not None:
+            state["ctx"]["d_font"] = d_font
+        if d_text is not None:
+            state["ctx"]["d_text"] = d_text
+        font = state["ctx"].get("d_font", 9)
+        state["prompt_text"] = f"Countdown: font {font} - qualsiasi tasto ferma"
+        state["status"] = f"Countdown attivo (font {font})"
         state["ctx"]["d_counter"] = 60
         state["ctx"]["d_inverted"] = False
-        state["ctx"]["d_font"] = 9
         state["ctx"]["useBold"] = False
         state["last_d_send"] = 0.0
     elif mode == "t":
@@ -567,30 +588,58 @@ def process_active_input(
             return
 
     if mode == "w":
-        payload = normalize_text(value_raw)
-        if len(payload) > 250:
-            payload = payload[:250]
-            state["status"] = "Testo troncato a 250 byte"
-        state["ctx"]["w_text"] = payload
-        # Clear display before starting watch (partial refresh)
-        _, warning = send_packet(
-            ser, bytes([0x00, 0x00]), "CMD display refresh (partial)", log_lines, exec_log=exec_log,
-        )
-        set_command_state(state, "w_active")
-        return
+        if step == 0:
+            if value == "":
+                font = 9
+            else:
+                font = parse_font_input(value)
+                if font is None:
+                    state["status"] = "Font non valido, inserisci 1-15 o a-d"
+                    return
+            state["ctx"]["w_font"] = font
+            state["step"] = 1
+            state["prompt_text"] = "Watch: inserisci testo da visualizzare in loop"
+            state["input_line"] = ""
+            return
+        if step == 1:
+            payload = normalize_text(value_raw)
+            if len(payload) > 250:
+                payload = payload[:250]
+                state["status"] = "Testo troncato a 250 byte"
+            state["ctx"]["w_text"] = payload
+            # Clear display before starting watch (partial refresh)
+            _, warning = send_packet(
+                ser, bytes([0x00, 0x00]), "CMD display refresh (partial)", log_lines, exec_log=exec_log,
+            )
+            set_command_state(state, "w_active")
+            return
 
     if mode == "d":
-        payload = normalize_text(value_raw)
-        if len(payload) > 250:
-            payload = payload[:250]
-            state["status"] = "Testo troncato a 250 byte"
-        state["ctx"]["d_text"] = payload
-        # Clear display before starting countdown (partial refresh)
-        _, warning = send_packet(
-            ser, bytes([0x00, 0x00]), "CMD display refresh (partial)", log_lines, exec_log=exec_log,
-        )
-        set_command_state(state, "d_active")
-        return
+        if step == 0:
+            if value == "":
+                font = 9
+            else:
+                font = parse_font_input(value)
+                if font is None:
+                    state["status"] = "Font non valido, inserisci 1-15 o a-d"
+                    return
+            state["ctx"]["d_font"] = font
+            state["step"] = 1
+            state["prompt_text"] = "Countdown: premi invio per avviare)"
+            state["input_line"] = ""
+            return
+        if step == 1:
+            payload = normalize_text(value_raw)
+            if len(payload) > 250:
+                payload = payload[:250]
+                state["status"] = "Testo troncato a 250 byte"
+            state["ctx"]["d_text"] = payload
+            # Clear display before starting countdown (partial refresh)
+            _, warning = send_packet(
+                ser, bytes([0x00, 0x00]), "CMD display refresh (partial)", log_lines, exec_log=exec_log,
+            )
+            set_command_state(state, "d_active")
+            return
 
     if mode == "a":
         # Font list display - just complete and let draw_windows show it
@@ -657,13 +706,15 @@ def run_curses_interface(
         "step": 0,
         "answers": [],
         "ctx": {},
-        "prompt_text": "Premi c/i/r/x/a/t/e/l/w/d/z o q",
+        "prompt_text": "Premi c/i/r/x/a/t/e/l/w/d/z/f o q",
         "input_line": "",
         "status": "Pronto",
         "last_tx": "",
         "rx_buffer": b"",
         "last_w_send": 0.0,
         "last_d_send": 0.0,
+        "show_logs": True,
+        "init_sent": False,
     }
     log_lines: List[str] = []
 
@@ -684,7 +735,15 @@ def run_curses_interface(
             lines, remainder = split_serial_lines(state["rx_buffer"])
             state["rx_buffer"] = remainder
             for raw_line in lines:
-                append_log(log_lines, f"RX: {to_ascii(raw_line)}")
+                line_text = to_ascii(raw_line)
+                append_log(log_lines, f"RX: {line_text}")
+                # Check for init completed message and auto-send init command
+                if "[M] init completed" in line_text and not state["init_sent"]:
+                    state["init_sent"] = True
+                    _, _ = send_packet(
+                        ser, bytes([0x00, 0xAA]), "AUTO INIT on boot", log_lines, exec_log=exec_log,
+                    )
+                    state["status"] = "Init automatico inviato"
 
         # Countdown mode: send user text with counter every 1s, invert at 15, reset at 0
         if state["mode"] == "d_active":
@@ -816,6 +875,10 @@ def run_curses_interface(
             state["status"] = f"Bold: {'ON' if state['ctx']['useBold'] else 'OFF'} (font {state['ctx'].get('d_font', state['ctx'].get('w_font', '?'))})"
             state["last_d_send"] = time.time() - 1.0  # Force immediate send on next cycle
             state["last_w_send"] = time.time() - 1.0
+        elif isinstance(ch, str) and ch.lower() == "f" and not state["active"]:
+            # Toggle log visibility
+            state["show_logs"] = not state["show_logs"]
+            state["status"] = f"Log visibility: {'ON' if state['show_logs'] else 'OFF'}"
         elif isinstance(ch, str) and not state["active"] and ch.lower() in {"c", "i", "r", "x", "a", "t", "e", "l", "w", "d", "z"}:
             set_command_state(state, ch.lower())
             state["input_line"] = ""
