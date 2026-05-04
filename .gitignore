@@ -34,7 +34,8 @@ Thumbs.db
 .DS_Store
 .AppleDouble
 .LSOverride
-
+.aider.tags.cache.v4
+doxygen/
 # Local logs
 exec.log
 

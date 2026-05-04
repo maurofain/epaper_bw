@@ -1,0 +1,18 @@
+
+# 2026-05-01 15:33:10.388815
++n
+
+# 2026-05-01 15:34:30.874444
++lo script scripts/generate_doxigen.sh nopn ha creato i file doxygen
+
+# 2026-05-01 15:36:33.107308
++/add
+
+# 2026-05-01 15:37:03.269783
++/add scripts/generate_doxygen.sh
+
+# 2026-05-01 15:37:09.158558
++lo script scripts/generate_doxigen.sh nopn ha creato i file doxygen
+
+# 2026-05-01 15:41:46.473421
++ dove vengono creati i file doxygen con questo script?
