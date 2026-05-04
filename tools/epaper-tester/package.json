@@ -1,0 +1,33 @@
+{
+  "name": "epaper-tester",
+  "version": "1.0.0",
+  "description": "EpaperQr RS232 Protocol Tester - Electron App",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:linux": "electron-builder --linux",
+    "build:win": "electron-builder --win",
+    "build": "electron-builder --linux --win"
+  },
+  "build": {
+    "appId": "it.maurofain.epaper-tester",
+    "productName": "EpaperQr Tester",
+    "directories": {
+      "output": "dist"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "Utility"
+    },
+    "win": {
+      "target": ["nsis", "portable"]
+    }
+  },
+  "dependencies": {
+    "serialport": "^12.0.0"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.0.0"
+  }
+}

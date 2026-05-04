@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'" />
+  <title>EpaperQr RS232 Tester</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+
+    <!-- ── HEADER ──────────────────────────────────────────────── -->
+    <header>
+      <h1>EpaperQr RS232 Tester</h1>
+      <div id="port-bar">
+        <select id="port-select">
+          <option value="">-- seleziona porta --</option>
+        </select>
+        <button id="btn-refresh-ports" title="Aggiorna lista porte">⟳</button>
+        <button id="btn-connect">Connetti</button>
+        <span id="status-dot" class="dot disconnected"></span>
+        <span id="status-label">Disconnesso</span>
+      </div>
+    </header>
+
+    <!-- ── MAIN ────────────────────────────────────────────────── -->
+    <main>
+
+      <!-- LEFT: commands panel -->
+      <section id="cmd-panel">
+
+        <!-- Quick commands -->
+        <fieldset>
+          <legend>Comandi 0x00</legend>
+          <div class="btn-grid">
+            <button class="cmd-btn" data-cmd="0x00">Refresh totale</button>
+            <button class="cmd-btn" data-cmd="0x01">Scanner ON + refresh</button>
+            <button class="cmd-btn" data-cmd="0x02">Scanner ON</button>
+            <button class="cmd-btn" data-cmd="0x03">Scanner OFF</button>
+            <button class="cmd-btn" data-cmd="0x04">Tema normale</button>
+            <button class="cmd-btn" data-cmd="0x05">Tema invertito</button>
+            <button class="cmd-btn" data-cmd="0xAA">Init (0xAA)</button>
+            <button class="cmd-btn" data-cmd="0xBB">Reboot (0xBB)</button>
+            <button class="cmd-btn" data-cmd="0xEE">Disconnect (0xEE)</button>
+            <button class="cmd-btn" data-cmd="0xFF">Logo (0xFF)</button>
+          </div>
+        </fieldset>
+
+        <!-- Text auto -->
+        <fieldset>
+          <legend>Testo AUTO (0x01) — font selezionato automaticamente</legend>
+          <div class="row">
+            <input id="text-auto-input" type="text"
+                   placeholder="Testo (ç=bold, £=Montserrat, §=partial refresh, \\n=CR)" />
+            <button id="btn-text-auto">Invia</button>
+          </div>
+          <p class="hint">Prefissi: <kbd>ç</kbd> bold · <kbd>£</kbd> Montserrat · <kbd>§</kbd> partial refresh</p>
+        </fieldset>
+
+        <!-- Text extended -->
+        <fieldset>
+          <legend>Testo ESTESO (0x01 0xFF) — font e posizione espliciti</legend>
+          <div class="row">
+            <label>Font
+              <select id="ext-font">
+              </select>
+            </label>
+            <label>X <input id="ext-x" type="number" value="100" min="0" max="255" style="width:55px"/></label>
+            <label>Y <input id="ext-y" type="number" value="100" min="0" max="255" style="width:55px"/></label>
+          </div>
+          <div class="row">
+            <input id="ext-text" type="text"
+                   placeholder="Testo (\\n = CR)" style="flex:1"/>
+            <button id="btn-ext-send">Invia</button>
+          </div>
+        </fieldset>
+
+        <!-- LED control -->
+        <fieldset>
+          <legend>LED WS2812B (0x02)</legend>
+          <div id="led-grid">
+            <div class="led-row" data-led="1">
+              <span>LED 1</span>
+              <label>R<input type="number" class="led-r" value="0" min="0" max="255"/></label>
+              <label>G<input type="number" class="led-g" value="0" min="0" max="255"/></label>
+              <label>B<input type="number" class="led-b" value="0" min="0" max="255"/></label>
+              <input type="color" class="led-color" value="#000000" title="Color picker"/>
+            </div>
+            <div class="led-row" data-led="2">
+              <span>LED 2</span>
+              <label>R<input type="number" class="led-r" value="0" min="0" max="255"/></label>
+              <label>G<input type="number" class="led-g" value="0" min="0" max="255"/></label>
+              <label>B<input type="number" class="led-b" value="0" min="0" max="255"/></label>
+              <input type="color" class="led-color" value="#000000" title="Color picker"/>
+            </div>
+            <div class="led-row" data-led="3">
+              <span>LED 3</span>
+              <label>R<input type="number" class="led-r" value="0" min="0" max="255"/></label>
+              <label>G<input type="number" class="led-g" value="0" min="0" max="255"/></label>
+              <label>B<input type="number" class="led-b" value="0" min="0" max="255"/></label>
+              <input type="color" class="led-color" value="#000000" title="Color picker"/>
+            </div>
+            <div class="led-row" data-led="4">
+              <span>LED 4</span>
+              <label>R<input type="number" class="led-r" value="0" min="0" max="255"/></label>
+              <label>G<input type="number" class="led-g" value="0" min="0" max="255"/></label>
+              <label>B<input type="number" class="led-b" value="0" min="0" max="255"/></label>
+              <input type="color" class="led-color" value="#000000" title="Color picker"/>
+            </div>
+          </div>
+          <button id="btn-led-send">Invia LED</button>
+        </fieldset>
+
+        <!-- Watch mode -->
+        <fieldset>
+          <legend>Watch — orologio (secondi) in loop</legend>
+          <div class="row">
+            <label>Font
+              <select id="watch-font"></select>
+            </label>
+            <label>Bold <input id="watch-bold" type="checkbox"/></label>
+          </div>
+          <div class="row">
+            <input id="watch-text" type="text" placeholder="Testo opzionale sopra i secondi"/>
+          </div>
+          <div class="row">
+            <button id="btn-watch-start">▶ Avvia</button>
+            <button id="btn-watch-stop" disabled>■ Ferma</button>
+            <span id="watch-status"></span>
+          </div>
+        </fieldset>
+
+        <!-- Countdown mode -->
+        <fieldset>
+          <legend>Countdown (60→0, tema invertito a 15)</legend>
+          <div class="row">
+            <label>Font
+              <select id="cd-font"></select>
+            </label>
+            <label>Bold <input id="cd-bold" type="checkbox"/></label>
+          </div>
+          <div class="row">
+            <input id="cd-text" type="text" placeholder="Testo opzionale sopra il contatore"/>
+          </div>
+          <div class="row">
+            <button id="btn-cd-start">▶ Avvia</button>
+            <button id="btn-cd-stop" disabled>■ Ferma</button>
+            <span id="cd-status"></span>
+          </div>
+        </fieldset>
+
+        <!-- Font demo -->
+        <fieldset>
+          <legend>Font Demo — cicla tutti i 15 font</legend>
+          <div class="row">
+            <button id="btn-demo-start">▶ Avvia</button>
+            <button id="btn-demo-stop" disabled>■ Ferma</button>
+            <span id="demo-status"></span>
+          </div>
+        </fieldset>
+
+      </section>
+
+      <!-- RIGHT: log panel -->
+      <section id="log-panel">
+        <div id="log-header">
+          <span>Log seriale</span>
+          <button id="btn-clear-log">Pulisci</button>
+        </div>
+        <div id="log-box"></div>
+      </section>
+
+    </main>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
