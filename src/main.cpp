@@ -1766,7 +1766,7 @@ void displayJpegCentered(const char *path)
 void setupDisplay()
 {
     initEpaperDriver();
-    GDEY0154D67_set_orientation(GDEY0154D67_Orientation::ORIENTATION_0);
+    GDEY0154D67_set_orientation(GDEY0154D67_Orientation::ORIENTATION_90);
     _LOGI("[M] Epaper driver enabled");
 }
 
